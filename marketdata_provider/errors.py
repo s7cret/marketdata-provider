@@ -17,6 +17,9 @@ class MDIntrabarDataUnavailable(MarketDataError): code = "MD_INTRABAR_DATA_UNAVA
 class MDRuntimeIntrabarUnsupported(MarketDataError): code = "MD_RUNTIME_INTRABAR_UNSUPPORTED"
 class MDNetworkUnavailable(MarketDataError): code = "MD_NETWORK_UNAVAILABLE"
 class MDUnsupportedFeature(MarketDataError): code = "MD_UNSUPPORTED_FEATURE"
+class MDCacheConflict(MarketDataError): code = "MD_CACHE_CONFLICT"
+class MDWsRestCandleMismatch(MarketDataError): code = "MD_WS_REST_CANDLE_MISMATCH"
+class MDSymbolNotTradableForStream(MarketDataError): code = "MD_SYMBOL_NOT_TRADABLE_FOR_STREAM"
 
 # Backwards-compatible aliases for the discarded sketch's naming style.
 MD_SYMBOL_NOT_FOUND = MDSymbolUnsupported

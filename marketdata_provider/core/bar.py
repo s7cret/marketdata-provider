@@ -20,12 +20,16 @@ class MarketBar(Bar):
     market: str = ""
     symbol: str = ""
     timeframe: str = ""
+    source_transport: str = "rest"
+    source_kind: str = "trade_kline"
     source: str = ""
     is_closed: bool = True
     quote_volume: float | None = None
+    turnover: float | None = None
     trades_count: int | None = None
     taker_buy_base_volume: float | None = None
     taker_buy_quote_volume: float | None = None
+    downloaded_at: int | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_bar(self) -> Bar:
