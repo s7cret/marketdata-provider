@@ -11,9 +11,9 @@ def test_offline_csv_provider(tmp_path: Path):
 def test_cli_validate(tmp_path: Path, capsys):
     p = tmp_path / "bars.csv"
     p.write_text("time,open,high,low,close,volume\n1000,1,2,0.5,1.5,10\n")
-    assert main(["validate", str(p), "--timeframe", "1m"]) == 0
+    assert main(["validate", "--path", str(p), "--timeframe", "1m"]) == 0
     assert '"ok": true' in capsys.readouterr().out
 
 def test_cli_fetch_fails_explicitly(capsys):
-    assert main(["fetch"]) == 2
+    assert main(["fetch", "--timeframe", "1m"]) == 2
     assert "MD_UNSUPPORTED_FEATURE" in capsys.readouterr().out
