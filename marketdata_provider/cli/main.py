@@ -10,9 +10,9 @@ from pathlib import Path
 from marketdata_provider.cache.local import read_cache_segment, write_cache_segment
 from marketdata_provider.config import BinanceConfig, BybitConfig
 from marketdata_provider.errors import MDNetworkUnavailable, MDUnsupportedFeature, MarketDataError
-from marketdata_provider.store import CandleStore
-from marketdata_provider.store.repair import audit_against_source, load_repair_source, repair_from_source
-from marketdata_provider.streaming import KlineUpdate, MockWebSocketSupervisor, normalize_binance_kline, normalize_bybit_kline, require_live_stream_enabled
+from marketdata_provider.store import CandleStore, RawStore, SegmentStore
+from marketdata_provider.store.repair import audit_against_source, load_repair_source, read_repair_logs, repair_from_source, repair_log_path
+from marketdata_provider.streaming import KlineUpdate, MockWebSocketSupervisor, PublicKlineWebSocketClient, normalize_binance_kline, normalize_bybit_kline, require_live_stream_enabled
 from marketdata_provider.exchanges.binance.provider import binance_get_bars_sync
 from marketdata_provider.exchanges.bybit.provider import bybit_get_bars_sync
 from marketdata_provider.providers import OfflineDataProvider
@@ -133,7 +133,7 @@ def _cmd_stream(args: argparse.Namespace) -> int:
         require_live_stream_enabled()
         raise MDUnsupportedFeature("Live WebSocket streaming is not implemented in Stage C; use --mock-events for deterministic local ingestion")
     events = _load_mock_events(args.mock_events, market=ns.market)
-    result = MockWebSocketSupervisor(store).run(events, reconnect_after=args.reconnect_after)
+    result = MockWebSocketSupervisor(store).run(events, reconnect_after=args.reconnect_after, queue_maxsize=args.queue_maxsize)
     _json({"ok": True, **asdict(result)})
     return 0
 
@@ -142,7 +142,7 @@ def _cmd_audit(args: argparse.Namespace) -> int:
     ns = _store_ns(args)
     store = CandleStore(args.store_dir)
     source = load_repair_source(args.source_path, exchange=ns.exchange, market=ns.market, symbol=ns.exchange_symbol, timeframe=args.timeframe)
-    report = audit_against_source(store, source, exchange=ns.exchange, market=ns.market, symbol=ns.exchange_symbol, timeframe=args.timeframe)
+    report = audit_against_source(store, source, exchange=ns.exchange, market=ns.market, symbol=ns.exchange_symbol, timeframe=args.timeframe, strict=args.strict)
     _json({"ok": report.ok, "checked": report.checked, "issues": [asdict(i) for i in report.issues]})
     return 0 if report.ok else 3
 
@@ -151,8 +151,41 @@ def _cmd_repair(args: argparse.Namespace) -> int:
     ns = _store_ns(args)
     store = CandleStore(args.store_dir)
     source = load_repair_source(args.source_path, exchange=ns.exchange, market=ns.market, symbol=ns.exchange_symbol, timeframe=args.timeframe)
-    changed = repair_from_source(store, source, exchange=ns.exchange, market=ns.market, symbol=ns.exchange_symbol, timeframe=args.timeframe)
-    _json({"ok": True, "changed": changed})
+    log_path = args.log_path or repair_log_path(args.store_dir, exchange=ns.exchange, market=ns.market, symbol=ns.exchange_symbol, timeframe=args.timeframe)
+    log = repair_from_source(store, source, exchange=ns.exchange, market=ns.market, symbol=ns.exchange_symbol, timeframe=args.timeframe, policy=args.policy, log_path=log_path)
+    _json({"ok": True, "changed": log.changed, "applied": log.applied, "log_path": str(log_path)})
+    return 0
+
+
+def _cmd_repair_logs(args: argparse.Namespace) -> int:
+    _json({"ok": True, "logs": read_repair_logs(args.store_dir)})
+    return 0
+
+
+def _cmd_raw_inspect(args: argparse.Namespace) -> int:
+    manifests = RawStore(args.raw_dir).inspect()
+    _json({"ok": True, "raw": [asdict(m) for m in manifests]})
+    return 0
+
+
+def _cmd_vacuum(args: argparse.Namespace) -> int:
+    result = SegmentStore(args.store_dir).vacuum()
+    _json({"ok": True, **result})
+    return 0
+
+
+def _cmd_compact(args: argparse.Namespace) -> int:
+    ns = _store_ns(args)
+    manifest = SegmentStore(args.store_dir, data_format=args.format).compact(exchange=ns.exchange, market=ns.market, symbol=ns.exchange_symbol, timeframe=args.timeframe, data_format=args.format)
+    _json({"ok": True, "manifest": asdict(manifest)})
+    return 0
+
+
+def _cmd_live_ws_once(args: argparse.Namespace) -> int:
+    # Explicit real client construction path for env-gated smoke/integration use.
+    ns = _store_ns(args)
+    client = PublicKlineWebSocketClient(exchange=ns.exchange, market=ns.market, symbol=ns.exchange_symbol, timeframe=args.timeframe)
+    _json({"ok": True, "exchange": ns.exchange, "market": ns.market, "url": client.url, "subscribe": client.subscribe})
     return 0
 
 
@@ -171,7 +204,7 @@ def _common(sub: argparse.ArgumentParser, *, source_required: bool = True) -> No
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="marketdata", description="MarketData Provider Stage C CLI")
+    p = argparse.ArgumentParser(prog="marketdata", description="MarketData Provider Stage D CLI")
     sub = p.add_subparsers(dest="command", required=True)
     v = sub.add_parser("validate", help="validate offline/cache/live bars")
     _common(v); v.set_defaults(func=_cmd_validate)
@@ -186,12 +219,22 @@ def build_parser() -> argparse.ArgumentParser:
     cur.add_argument("--store-dir", type=Path, default=Path(".marketdata-store")); cur.add_argument("--symbol", required=True); cur.add_argument("--timeframe", required=True); cur.add_argument("--exchange"); cur.add_argument("--market"); cur.set_defaults(func=_cmd_current)
     cps = sub.add_parser("checkpoints", help="list stream checkpoints")
     cps.add_argument("--store-dir", type=Path, default=Path(".marketdata-store")); cps.set_defaults(func=_cmd_checkpoints)
-    s = sub.add_parser("stream", help="ingest mocked stream events; live WS fails unless explicitly implemented/env-gated")
-    s.add_argument("--store-dir", type=Path, default=Path(".marketdata-store")); s.add_argument("--symbol", required=True); s.add_argument("--timeframe", required=True); s.add_argument("--exchange"); s.add_argument("--market"); s.add_argument("--mock-events", type=Path); s.add_argument("--reconnect-after", type=int); s.set_defaults(func=_cmd_stream)
+    s = sub.add_parser("stream", help="ingest mocked stream events; live WS is env-gated and never faked")
+    s.add_argument("--store-dir", type=Path, default=Path(".marketdata-store")); s.add_argument("--symbol", required=True); s.add_argument("--timeframe", required=True); s.add_argument("--exchange"); s.add_argument("--market"); s.add_argument("--mock-events", type=Path); s.add_argument("--reconnect-after", type=int); s.add_argument("--queue-maxsize", type=int); s.set_defaults(func=_cmd_stream)
     a = sub.add_parser("audit", help="compare CandleStore finalized bars against REST/offline source data")
-    a.add_argument("--store-dir", type=Path, default=Path(".marketdata-store")); a.add_argument("--source-path", type=Path, required=True); a.add_argument("--symbol", required=True); a.add_argument("--timeframe", required=True); a.add_argument("--exchange"); a.add_argument("--market"); a.set_defaults(func=_cmd_audit)
-    r = sub.add_parser("repair", help="rewrite finalized store bars from REST/offline source data")
-    r.add_argument("--store-dir", type=Path, default=Path(".marketdata-store")); r.add_argument("--source-path", type=Path, required=True); r.add_argument("--symbol", required=True); r.add_argument("--timeframe", required=True); r.add_argument("--exchange"); r.add_argument("--market"); r.set_defaults(func=_cmd_repair)
+    a.add_argument("--store-dir", type=Path, default=Path(".marketdata-store")); a.add_argument("--source-path", type=Path, required=True); a.add_argument("--symbol", required=True); a.add_argument("--timeframe", required=True); a.add_argument("--exchange"); a.add_argument("--market"); a.add_argument("--strict", action="store_true"); a.set_defaults(func=_cmd_audit)
+    r = sub.add_parser("repair", help="rewrite finalized store bars from REST/offline source data with durable repair log")
+    r.add_argument("--store-dir", type=Path, default=Path(".marketdata-store")); r.add_argument("--source-path", type=Path, required=True); r.add_argument("--symbol", required=True); r.add_argument("--timeframe", required=True); r.add_argument("--exchange"); r.add_argument("--market"); r.add_argument("--policy", choices=["strict", "non-strict"], default="non-strict"); r.add_argument("--log-path", type=Path); r.set_defaults(func=_cmd_repair)
+    rl = sub.add_parser("repair-logs", help="list durable reconciliation/repair logs")
+    rl.add_argument("--store-dir", type=Path, default=Path(".marketdata-store")); rl.set_defaults(func=_cmd_repair_logs)
+    ri = sub.add_parser("raw-inspect", help="list RawStore retained payload batches")
+    ri.add_argument("--raw-dir", type=Path, default=Path(".marketdata-raw")); ri.set_defaults(func=_cmd_raw_inspect)
+    vac = sub.add_parser("vacuum", help="vacuum segment index and remove stale segment data files")
+    vac.add_argument("--store-dir", type=Path, default=Path(".marketdata-store")); vac.set_defaults(func=_cmd_vacuum)
+    comp = sub.add_parser("compact", help="rewrite a segment in csv/parquet format with identical manifest/checksum semantics")
+    comp.add_argument("--store-dir", type=Path, default=Path(".marketdata-store")); comp.add_argument("--symbol", required=True); comp.add_argument("--timeframe", required=True); comp.add_argument("--exchange"); comp.add_argument("--market"); comp.add_argument("--format", choices=["csv", "parquet"], default="csv"); comp.set_defaults(func=_cmd_compact)
+    wi = sub.add_parser("ws-info", help="construct real env-gated public WebSocket endpoint diagnostics without connecting")
+    wi.add_argument("--symbol", required=True); wi.add_argument("--timeframe", required=True); wi.add_argument("--exchange"); wi.add_argument("--market"); wi.set_defaults(func=_cmd_live_ws_once)
     return p
 
 

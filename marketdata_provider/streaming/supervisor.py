@@ -19,6 +19,9 @@ class MockStreamResult:
     closed_commits: int
     reconnects: int
     backfilled: int
+    dropped: int = 0
+    coalesced: int = 0
+    diagnostics: list[str] | None = None
 
 
 class MockWebSocketSupervisor:
@@ -31,8 +34,18 @@ class MockWebSocketSupervisor:
     def __init__(self, store: CandleStore):
         self.store = store
 
-    def run(self, updates: Iterable[KlineUpdate], *, backfill_bars: Iterable[MarketBar] = (), reconnect_after: int | None = None) -> MockStreamResult:
-        processed = open_updates = closed_commits = reconnects = backfilled = 0
+    def run(self, updates: Iterable[KlineUpdate], *, backfill_bars: Iterable[MarketBar] = (), reconnect_after: int | None = None, queue_maxsize: int | None = None) -> MockStreamResult:
+        processed = open_updates = closed_commits = reconnects = backfilled = dropped = coalesced = 0
+        diagnostics: list[str] = []
+        if queue_maxsize is not None:
+            from marketdata_provider.streaming.live import CoalescingKlineQueue
+            q = CoalescingKlineQueue(queue_maxsize)
+            for u in updates:
+                q.put(u)
+            updates = q.drain()
+            dropped = q.dropped
+            coalesced = q.coalesced
+            diagnostics.extend(d.code for d in q.diagnostics)
         for update in updates:
             if reconnect_after is not None and processed == reconnect_after:
                 reconnects += 1
@@ -49,7 +62,7 @@ class MockWebSocketSupervisor:
             if result.status in {"committed", "duplicate"}:
                 closed_commits += 1
             processed += 1
-        return MockStreamResult(processed=processed, open_updates=open_updates, closed_commits=closed_commits, reconnects=reconnects, backfilled=backfilled)
+        return MockStreamResult(processed=processed, open_updates=open_updates, closed_commits=closed_commits, reconnects=reconnects, backfilled=backfilled, dropped=dropped, coalesced=coalesced, diagnostics=diagnostics)
 
 
 def require_live_stream_enabled() -> None:

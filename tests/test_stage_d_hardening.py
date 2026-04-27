@@ -1,0 +1,72 @@
+from pathlib import Path
+
+import pytest
+
+from marketdata_provider.cli.main import main
+from marketdata_provider.core.bar import MarketBar
+from marketdata_provider.errors import MDUnsupportedFeature
+from marketdata_provider.store import RawStore, SegmentStore
+from marketdata_provider.streaming import CoalescingKlineQueue, KlineUpdate, PublicKlineWebSocketClient
+
+
+def mb(t: int, close: float = 1.5) -> MarketBar:
+    return MarketBar(time=t, open=1, high=2, low=0.5, close=close, volume=10, time_close=t + 59_999, exchange="binance", market="spot", symbol="BTCUSDT", timeframe="1m", source_transport="ws", source_kind="trade_kline", is_closed=True, downloaded_at=t + 60_000)
+
+
+def test_parquet_optional_fails_explicitly_when_pyarrow_missing(tmp_path: Path):
+    try:
+        import pyarrow  # noqa: F401
+    except Exception:
+        with pytest.raises(MDUnsupportedFeature, match="pyarrow"):
+            SegmentStore(tmp_path, data_format="parquet")
+    else:
+        store = SegmentStore(tmp_path, data_format="parquet")
+        manifest = store.replace_all([mb(0)], exchange="binance", market="spot", symbol="BTCUSDT", timeframe="1m")
+        assert manifest.data_format == "parquet"
+        assert store.read_all(exchange="binance", market="spot", symbol="BTCUSDT", timeframe="1m")[0].time == 0
+
+
+def test_raw_store_plain_ndjson_manifest_checksum(tmp_path: Path):
+    store = RawStore(tmp_path)
+    manifest = store.write_batch([{"b": 2, "a": 1}], exchange="binance", market="spot", symbol="BTCUSDT", source_transport="ws")
+    assert manifest.compression == "plain"
+    assert manifest.rows_count == 1
+    assert store.read_batch(exchange="binance", market="spot", symbol="BTCUSDT", source_transport="ws") == [{"a": 1, "b": 2}]
+    assert len(store.inspect()) == 1
+
+
+def test_backpressure_coalesces_and_reports_drop():
+    q = CoalescingKlineQueue(maxsize=1)
+    q.put(KlineUpdate("binance", "spot", "BTCUSDT", "1m", 1, 0, 59999, 1, 2, 0.5, 1.1, 10))
+    q.put(KlineUpdate("binance", "spot", "BTCUSDT", "1m", 2, 0, 59999, 1, 2, 0.5, 1.2, 10))
+    q.put(KlineUpdate("binance", "spot", "ETHUSDT", "1m", 3, 0, 59999, 1, 2, 0.5, 1.3, 10))
+    assert q.coalesced == 1
+    assert q.dropped == 1
+    assert q.diagnostics[0].code == "MD_STREAM_BACKPRESSURE_DROP"
+    assert q.drain()[0].symbol == "ETHUSDT"
+
+
+def test_real_ws_endpoint_construction_no_fake_connection():
+    b = PublicKlineWebSocketClient(exchange="binance", market="spot", symbol="BTCUSDT", timeframe="1m")
+    assert b.url.startswith("wss://stream.binance.com")
+    y = PublicKlineWebSocketClient(exchange="bybit", market="linear", symbol="BTCUSDT", timeframe="1m")
+    assert y.subscribe and "kline.1.BTCUSDT" in y.subscribe["args"]
+
+
+def test_cli_new_stage_d_commands(tmp_path: Path, capsys):
+    assert main(["vacuum", "--store-dir", str(tmp_path / "store")]) == 0
+    assert "removed_stale_data_files" in capsys.readouterr().out
+    raw = RawStore(tmp_path / "raw")
+    raw.write_batch([{"x": 1}], exchange="binance", market="spot", symbol="BTCUSDT", source_transport="rest")
+    assert main(["raw-inspect", "--raw-dir", str(tmp_path / "raw")]) == 0
+    assert "stage-d-raw-1" in capsys.readouterr().out
+
+
+@pytest.mark.skipif(__import__("os").getenv("RUN_MARKETDATA_STREAM_TESTS") != "1", reason="live public WS integration is env-gated")
+@pytest.mark.asyncio
+async def test_live_ws_env_gated_smoke():
+    client = PublicKlineWebSocketClient(exchange="binance", market="spot", symbol="BTCUSDT", timeframe="1m")
+    seen = []
+    async for event in client.events(max_messages=1, timeout_s=10):
+        seen.append(event)
+    assert seen

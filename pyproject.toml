@@ -13,6 +13,8 @@ license = {text = "MIT"}
 [project.optional-dependencies]
 dev = ["pytest>=7", "mypy>=1.8", "ruff"]
 parquet = ["pyarrow>=14"]
+stream = ["websockets>=12"]
+zstd = ["zstandard>=0.22"]
 
 [project.scripts]
 marketdata = "marketdata_provider.cli.main:main"
