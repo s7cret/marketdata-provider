@@ -74,7 +74,12 @@ class PublicKlineWebSocketClient:
             if self.market == "spot":
                 return f"wss://stream.binance.com:9443/ws/{stream}", None
             if self.market == "usdm":
-                return f"wss://fstream.binance.com/ws/{stream}", None
+                # Binance USDⓈ-M futures public streams are documented on
+                # fstream.binance.com, but in some regions that endpoint accepts
+                # the WebSocket handshake and then stays silent. The
+                # binancefuture.com host is the production futures stream host
+                # that emits the same kline payload shape.
+                return f"wss://fstream.binancefuture.com/ws/{stream}", None
             raise MDSymbolUnsupported(f"Unsupported Binance WebSocket market: {self.market}")
         if self.exchange == "bybit":
             if self.market not in {"spot", "linear"}:

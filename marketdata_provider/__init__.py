@@ -3,5 +3,10 @@ from marketdata_provider.core.protocols import DataProvider, IntrabarDataProvide
 from marketdata_provider.config import MarketDataConfig, BinanceConfig, BybitConfig, StreamingConfig, StorageConfig, OfflineDataConfig
 from marketdata_provider.providers import OfflineDataProvider
 
-__version__ = "0.1.0"
-__all__ = ["Bar", "MarketBar", "DataProvider", "IntrabarDataProvider", "MarketDataConfig", "BinanceConfig", "BybitConfig", "StreamingConfig", "StorageConfig", "OfflineDataConfig", "OfflineDataProvider", "RUNTIME_CONTRACT_VERSION"]
+__version__ = "2.17.0"
+__all__ = [
+    "Bar", "MarketBar", "DataProvider", "IntrabarDataProvider",
+    "MarketDataConfig", "BinanceConfig", "BybitConfig", "StreamingConfig",
+    "StorageConfig", "OfflineDataConfig", "OfflineDataProvider",
+    "RUNTIME_CONTRACT_VERSION",
+]

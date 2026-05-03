@@ -49,6 +49,8 @@ def test_backpressure_coalesces_and_reports_drop():
 def test_real_ws_endpoint_construction_no_fake_connection():
     b = PublicKlineWebSocketClient(exchange="binance", market="spot", symbol="BTCUSDT", timeframe="1m")
     assert b.url.startswith("wss://stream.binance.com")
+    bf = PublicKlineWebSocketClient(exchange="binance", market="usdm", symbol="BTCUSDT", timeframe="1m")
+    assert bf.url.startswith("wss://fstream.binancefuture.com")
     y = PublicKlineWebSocketClient(exchange="bybit", market="linear", symbol="BTCUSDT", timeframe="1m")
     assert y.subscribe and "kline.1.BTCUSDT" in y.subscribe["args"]
 
