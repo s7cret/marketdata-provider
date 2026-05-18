@@ -6,6 +6,12 @@ RUNTIME_CONTRACT_VERSION = "1.4"
 
 @dataclass(frozen=True, slots=True)
 class Bar:
+    """Canonical market data bar.
+
+    Times are UTC epoch milliseconds. time is the bar open time;
+    range queries use start-inclusive/end-exclusive bounds.
+    """
+
     time: int
     open: float
     high: float
