@@ -13,7 +13,10 @@ from marketdata_provider.contracts import (
     Timeframe,
     parse_timeframe,
 )
+from marketdata_provider.factories import create_candle_store, create_provider
 from marketdata_provider.providers import OfflineDataProvider
+
+MarketDataProvider = ContractMarketDataProvider
 
 __version__ = "2.17.0"
 __all__ = [
@@ -23,5 +26,7 @@ __all__ = [
     "StorageConfig", "OfflineDataConfig", "OfflineDataProvider",
     "BarQuery", "BarSeries", "CandleStore", "ContractBar",
     "ContractMarketDataProvider", "CoverageReport", "InstrumentKey",
+    "MarketDataProvider",
     "StoreResult", "Timeframe", "parse_timeframe", "RUNTIME_CONTRACT_VERSION",
+    "create_candle_store", "create_provider",
 ]

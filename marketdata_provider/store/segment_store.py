@@ -234,7 +234,7 @@ class SegmentStore:
         if importlib.util.find_spec("pyarrow") is None:
             raise MDUnsupportedFeature("Reading Parquet segments requires optional dependency pyarrow")
         import pyarrow.parquet as pq
-        rows = pq.read_table(path).to_pylist()
+        rows = pq.ParquetFile(path).read().to_pylist()
         return [self._row_to_bar({k: "" if v is None else str(v) for k, v in r.items()}) for r in rows]
 
     def _atomic_write_parquet(self, path: Path, bars: list[MarketBar]) -> None:
