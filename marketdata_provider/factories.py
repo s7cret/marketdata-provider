@@ -126,6 +126,9 @@ class _CandleStoreAdapter:
     def write(self, series: BarSeries) -> StoreResult:
         rows_written = 0
         try:
+            error = _series_write_error(series)
+            if error is not None:
+                return StoreResult(success=False, rows_written=0, error=error)
             for bar in series.bars:
                 market_bar = contract_to_market_bar(bar)
                 if market_bar.is_closed:
@@ -140,6 +143,23 @@ class _CandleStoreAdapter:
 
     def coverage(self, query: BarQuery) -> CoverageReport:
         return self.read(query).coverage
+
+
+def _series_write_error(series: BarSeries) -> str | None:
+    """Reject series that would cross canonical store identity boundaries."""
+
+    for bar in series.bars:
+        if bar.instrument != series.query.instrument:
+            return (
+                "bar instrument does not match series query "
+                f"({bar.instrument.serialize()} != {series.query.instrument.serialize()})"
+            )
+        if bar.timeframe != series.query.timeframe:
+            return (
+                "bar timeframe does not match series query "
+                f"({bar.timeframe.canonical} != {series.query.timeframe.canonical})"
+            )
+    return None
 
 
 class _LiveKlineClientAdapter:

@@ -67,6 +67,37 @@ def test_create_candle_store_returns_contract_protocol_and_preserves_window(tmp_
     assert series.coverage.delivered_end_ms == 120_000
 
 
+def test_candle_store_write_rejects_mixed_series_before_persisting(tmp_path: Path) -> None:
+    store = create_candle_store(MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path)))
+    query = _query()
+    mixed_bar = Bar(
+        InstrumentKey("bybit", "linear", "ETHUSDT"),
+        query.timeframe,
+        60_000,
+        119_999,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        2.0,
+        True,
+    )
+
+    result = store.write(
+        BarSeries(
+            query=query,
+            bars=(mixed_bar,),
+            coverage=CoverageReport(60_000, 120_000, 60_000, 120_000, source_mix=("test",)),
+        )
+    )
+
+    assert not result.success
+    assert result.rows_written == 0
+    assert result.error is not None
+    assert "instrument does not match" in result.error
+    assert store.read(query).bars == ()
+
+
 def test_create_provider_can_wrap_offline_data_as_canonical_protocol(tmp_path: Path) -> None:
     source = tmp_path / "bars.csv"
     source.write_text(
