@@ -13,7 +13,7 @@ from marketdata_provider.contracts import (
     Timeframe,
     parse_timeframe,
 )
-from marketdata_provider.factories import create_candle_store, create_provider
+from marketdata_provider.factories import create_candle_store, create_live_kline_client, create_provider
 from marketdata_provider.providers import OfflineDataProvider
 
 MarketDataProvider = ContractMarketDataProvider
@@ -28,5 +28,5 @@ __all__ = [
     "ContractMarketDataProvider", "CoverageReport", "InstrumentKey",
     "MarketDataProvider",
     "StoreResult", "Timeframe", "parse_timeframe", "RUNTIME_CONTRACT_VERSION",
-    "create_candle_store", "create_provider",
+    "create_candle_store", "create_live_kline_client", "create_provider",
 ]

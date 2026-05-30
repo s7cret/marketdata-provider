@@ -8,6 +8,7 @@ from marketdata_provider.config import MarketDataConfig
 from marketdata_provider.contracts.bar import Bar as ContractBar
 from marketdata_provider.contracts.instrument import InstrumentKey
 from marketdata_provider.contracts.protocols import CandleStore as CandleStoreProtocol
+from marketdata_provider.contracts.protocols import LiveKlineClient as LiveKlineClientProtocol
 from marketdata_provider.contracts.protocols import MarketDataProvider as MarketDataProviderProtocol
 from marketdata_provider.contracts.query import BarQuery
 from marketdata_provider.contracts.series import BarSeries, CoverageReport, StoreResult
@@ -34,6 +35,30 @@ def create_candle_store(config: MarketDataConfig) -> CandleStoreProtocol:
     """Create a canonical candle store from local package config."""
 
     return _CandleStoreAdapter(SegmentCandleStore(config.storage.cache_dir))
+
+
+def create_live_kline_client(
+    config: MarketDataConfig,
+    *,
+    instrument: InstrumentKey,
+    timeframe: Timeframe,
+) -> LiveKlineClientProtocol:
+    """Create a canonical public kline stream client.
+
+    Consumers depend on this factory/protocol instead of importing streaming
+    implementation modules directly.
+    """
+
+    from marketdata_provider.streaming import PublicKlineWebSocketClient
+
+    exchange = (config.default_exchange or instrument.exchange).lower()
+    market = (config.default_market or instrument.market).lower()
+    return PublicKlineWebSocketClient(
+        exchange=exchange,  # type: ignore[arg-type]
+        market=market,
+        symbol=instrument.symbol,
+        timeframe=timeframe.canonical,
+    )
 
 
 class _ExchangeProviderAdapter:

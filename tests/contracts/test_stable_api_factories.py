@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from marketdata_provider import create_candle_store, create_provider
+from marketdata_provider import create_candle_store, create_live_kline_client, create_provider
 from marketdata_provider.config import MarketDataConfig, OfflineDataConfig, StorageConfig
 from marketdata_provider.contracts import (
     Bar,
@@ -11,6 +11,7 @@ from marketdata_provider.contracts import (
     CandleStore,
     CoverageReport,
     InstrumentKey,
+    LiveKlineClient,
     MarketDataProvider,
     parse_timeframe,
 )
@@ -75,3 +76,13 @@ def test_create_provider_can_wrap_offline_data_as_canonical_protocol(tmp_path: P
 
     assert [bar.time for bar in series.bars] == [60_000]
     assert series.coverage.is_complete
+
+
+def test_create_live_kline_client_returns_contract_protocol() -> None:
+    client = create_live_kline_client(
+        MarketDataConfig(),
+        instrument=InstrumentKey("binance", "spot", "BTCUSDT"),
+        timeframe=parse_timeframe("1m"),
+    )
+
+    assert isinstance(client, LiveKlineClient)

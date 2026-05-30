@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Any, AsyncIterator, Protocol, runtime_checkable
 
+from marketdata_provider.contracts.instrument import InstrumentKey
 from marketdata_provider.contracts.query import BarQuery
 from marketdata_provider.contracts.series import BarSeries, CoverageReport, StoreResult
+from marketdata_provider.contracts.timeframe import Timeframe
 
 
 @runtime_checkable
@@ -18,3 +20,22 @@ class CandleStore(Protocol):
     def write(self, series: BarSeries) -> StoreResult: ...
 
     def coverage(self, query: BarQuery) -> CoverageReport: ...
+
+
+@runtime_checkable
+class LiveKlineClient(Protocol):
+    async def events(
+        self,
+        *,
+        max_messages: int | None = None,
+        timeout_s: float | None = None,
+    ) -> AsyncIterator[Any]: ...
+
+
+@runtime_checkable
+class LiveKlineClientFactory(Protocol):
+    def create_live_kline_client(
+        self,
+        instrument: InstrumentKey,
+        timeframe: Timeframe,
+    ) -> LiveKlineClient: ...

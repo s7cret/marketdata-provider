@@ -10,7 +10,7 @@ from marketdata_provider.contracts.errors import (
     MarketDataContractError,
 )
 from marketdata_provider.contracts.instrument import InstrumentKey
-from marketdata_provider.contracts.protocols import CandleStore, MarketDataProvider
+from marketdata_provider.contracts.protocols import CandleStore, LiveKlineClient, LiveKlineClientFactory, MarketDataProvider
 from marketdata_provider.contracts.query import BarQuery
 from marketdata_provider.contracts.series import BarSeries, CoverageReport, StoreResult
 from marketdata_provider.contracts.timeframe import Timeframe, parse_timeframe
@@ -27,6 +27,8 @@ __all__ = [
     "InvalidBarQueryError",
     "InvalidInstrumentError",
     "InvalidTimeframeError",
+    "LiveKlineClient",
+    "LiveKlineClientFactory",
     "MarketDataContractError",
     "MarketDataProvider",
     "StoreResult",
