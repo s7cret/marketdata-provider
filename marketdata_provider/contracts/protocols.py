@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, AsyncIterator, Protocol, runtime_checkable
+from typing import AsyncIterator, Protocol, runtime_checkable
 
+from marketdata_provider.contracts.events import LiveKlineEvent
 from marketdata_provider.contracts.instrument import InstrumentKey
 from marketdata_provider.contracts.query import BarQuery
 from marketdata_provider.contracts.series import BarSeries, CoverageReport, StoreResult
@@ -29,7 +30,7 @@ class LiveKlineClient(Protocol):
         *,
         max_messages: int | None = None,
         timeout_s: float | None = None,
-    ) -> AsyncIterator[Any]: ...
+    ) -> AsyncIterator[LiveKlineEvent]: ...
 
 
 @runtime_checkable

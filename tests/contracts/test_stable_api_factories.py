@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import AsyncIterator
 
+import pytest
 from marketdata_provider import create_candle_store, create_live_kline_client, create_provider
+from marketdata_provider import LiveKlineEvent as TopLevelLiveKlineEvent
 from marketdata_provider.config import MarketDataConfig, OfflineDataConfig, StorageConfig
 from marketdata_provider.contracts import (
     Bar,
@@ -12,9 +15,12 @@ from marketdata_provider.contracts import (
     CoverageReport,
     InstrumentKey,
     LiveKlineClient,
+    LiveKlineEvent,
     MarketDataProvider,
     parse_timeframe,
 )
+from marketdata_provider.streaming import KlineUpdate
+from marketdata_provider.streaming.live import LiveKlineEvent as RawLiveKlineEvent
 
 
 def _query() -> BarQuery:
@@ -86,3 +92,55 @@ def test_create_live_kline_client_returns_contract_protocol() -> None:
     )
 
     assert isinstance(client, LiveKlineClient)
+    assert TopLevelLiveKlineEvent is LiveKlineEvent
+
+
+@pytest.mark.asyncio
+async def test_create_live_kline_client_yields_canonical_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeRawClient:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        async def events(
+            self,
+            *,
+            max_messages: int | None = None,
+            timeout_s: float | None = None,
+        ) -> AsyncIterator[RawLiveKlineEvent]:
+            yield RawLiveKlineEvent(
+                update=KlineUpdate(
+                    "binance",
+                    "spot",
+                    "BTCUSDT",
+                    "1m",
+                    123,
+                    60_000,
+                    119_999,
+                    1.0,
+                    2.0,
+                    0.5,
+                    1.5,
+                    10.0,
+                    is_closed=True,
+                    received_at=456,
+                ),
+                raw_payload={"stream": "test"},
+            )
+
+    monkeypatch.setattr("marketdata_provider.streaming.PublicKlineWebSocketClient", FakeRawClient)
+    client = create_live_kline_client(
+        MarketDataConfig(),
+        instrument=InstrumentKey("binance", "spot", "BTCUSDT"),
+        timeframe=parse_timeframe("1m"),
+    )
+
+    events = [event async for event in client.events(max_messages=1, timeout_s=1)]
+
+    assert len(events) == 1
+    assert isinstance(events[0], LiveKlineEvent)
+    assert events[0].bar.instrument == InstrumentKey("binance", "spot", "BTCUSDT")
+    assert events[0].bar.timeframe == parse_timeframe("1m")
+    assert events[0].bar.closed is True
+    assert events[0].event_time == 123
+    assert events[0].received_at == 456
+    assert events[0].raw_payload == {"stream": "test"}

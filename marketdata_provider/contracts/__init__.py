@@ -9,6 +9,7 @@ from marketdata_provider.contracts.errors import (
     InvalidTimeframeError,
     MarketDataContractError,
 )
+from marketdata_provider.contracts.events import LiveKlineEvent
 from marketdata_provider.contracts.instrument import InstrumentKey
 from marketdata_provider.contracts.protocols import CandleStore, LiveKlineClient, LiveKlineClientFactory, MarketDataProvider
 from marketdata_provider.contracts.query import BarQuery
@@ -29,6 +30,7 @@ __all__ = [
     "InvalidTimeframeError",
     "LiveKlineClient",
     "LiveKlineClientFactory",
+    "LiveKlineEvent",
     "MarketDataContractError",
     "MarketDataProvider",
     "StoreResult",

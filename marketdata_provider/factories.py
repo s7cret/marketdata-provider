@@ -1,18 +1,21 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import AsyncIterator
 
 from marketdata_provider.config import MarketDataConfig
 from marketdata_provider._adapters import contract_to_market_bar
+from marketdata_provider._adapters import core_to_contract_bar
 from marketdata_provider._adapters import series_from_core_bars
 from marketdata_provider._adapters import series_from_market_bars
+from marketdata_provider.contracts.events import LiveKlineEvent
 from marketdata_provider.contracts.instrument import InstrumentKey
 from marketdata_provider.contracts.protocols import CandleStore as CandleStoreProtocol
 from marketdata_provider.contracts.protocols import LiveKlineClient as LiveKlineClientProtocol
 from marketdata_provider.contracts.protocols import MarketDataProvider as MarketDataProviderProtocol
 from marketdata_provider.contracts.query import BarQuery
 from marketdata_provider.contracts.series import BarSeries, CoverageReport, StoreResult
-from marketdata_provider.contracts.timeframe import Timeframe
+from marketdata_provider.contracts.timeframe import Timeframe, parse_timeframe
 from marketdata_provider.errors import MDUnsupportedFeature
 from marketdata_provider.exchanges.binance.provider import binance_get_bars_sync
 from marketdata_provider.exchanges.bybit.provider import bybit_get_bars_sync
@@ -50,12 +53,13 @@ def create_live_kline_client(
 
     exchange = (config.default_exchange or instrument.exchange).lower()
     market = (config.default_market or instrument.market).lower()
-    return PublicKlineWebSocketClient(
+    raw_client = PublicKlineWebSocketClient(
         exchange=exchange,  # type: ignore[arg-type]
         market=market,
         symbol=instrument.symbol,
         timeframe=timeframe.canonical,
     )
+    return _LiveKlineClientAdapter(raw_client, instrument=instrument, timeframe=timeframe)
 
 
 class _ExchangeProviderAdapter:
@@ -136,3 +140,28 @@ class _CandleStoreAdapter:
 
     def coverage(self, query: BarQuery) -> CoverageReport:
         return self.read(query).coverage
+
+
+class _LiveKlineClientAdapter:
+    def __init__(self, raw_client, *, instrument: InstrumentKey, timeframe: Timeframe):
+        self.raw_client = raw_client
+        self.instrument = instrument
+        self.timeframe = timeframe
+
+    async def events(
+        self,
+        *,
+        max_messages: int | None = None,
+        timeout_s: float | None = None,
+    ) -> AsyncIterator[LiveKlineEvent]:
+        async for event in self.raw_client.events(max_messages=max_messages, timeout_s=timeout_s):
+            update = event.update
+            instrument = InstrumentKey(update.exchange, update.market, update.symbol)
+            timeframe = parse_timeframe(update.timeframe)
+            yield LiveKlineEvent(
+                bar=core_to_contract_bar(instrument, timeframe, update.to_market_bar()),
+                event_time=update.event_time,
+                received_at=update.received_at,
+                raw_payload=dict(event.raw_payload),
+                diagnostic_code=event.diagnostic.code if event.diagnostic else None,
+            )
