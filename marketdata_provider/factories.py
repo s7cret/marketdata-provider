@@ -9,6 +9,7 @@ from marketdata_provider._adapters import core_to_contract_bar
 from marketdata_provider._adapters import series_from_core_bars
 from marketdata_provider._adapters import series_from_market_bars
 from marketdata_provider.contracts.events import LiveKlineEvent
+from marketdata_provider.contracts.errors import CoverageValidationError
 from marketdata_provider.contracts.instrument import InstrumentKey
 from marketdata_provider.contracts.protocols import CandleStore as CandleStoreProtocol
 from marketdata_provider.contracts.protocols import LiveKlineClient as LiveKlineClientProtocol
@@ -16,6 +17,7 @@ from marketdata_provider.contracts.protocols import MarketDataProvider as Market
 from marketdata_provider.contracts.query import BarQuery
 from marketdata_provider.contracts.series import BarSeries, CoverageReport, StoreResult
 from marketdata_provider.contracts.timeframe import Timeframe, parse_timeframe
+from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.errors import MDUnsupportedFeature
 from marketdata_provider.exchanges.binance.provider import binance_get_bars_sync
 from marketdata_provider.exchanges.bybit.provider import bybit_get_bars_sync
@@ -113,14 +115,17 @@ class _CandleStoreAdapter:
         self.store = store
 
     def read(self, query: BarQuery) -> BarSeries:
-        bars = self.store.get_market_bars(
+        bars = tuple(self.store.get_market_bars(
             exchange=query.instrument.exchange,
             market=query.instrument.market,
             symbol=query.instrument.symbol,
             timeframe=query.timeframe.canonical,
             start=query.start_ms,
             end=query.end_ms,
-        )
+        ))
+        error = _stored_bars_read_error(query, bars)
+        if error is not None:
+            raise CoverageValidationError(error)
         return series_from_market_bars(query, bars, source="storage")
 
     def write(self, series: BarSeries) -> StoreResult:
@@ -158,6 +163,31 @@ def _series_write_error(series: BarSeries) -> str | None:
             return (
                 "bar timeframe does not match series query "
                 f"({bar.timeframe.canonical} != {series.query.timeframe.canonical})"
+            )
+    return None
+
+
+def _stored_bars_read_error(query: BarQuery, bars: tuple[MarketBar, ...]) -> str | None:
+    """Reject stored rows whose embedded identity disagrees with the read query."""
+
+    for bar in bars:
+        try:
+            instrument = InstrumentKey(bar.exchange, bar.market, bar.symbol)
+        except ValueError as exc:
+            return f"stored bar instrument is invalid ({exc})"
+        if instrument != query.instrument:
+            return (
+                "stored bar instrument does not match query "
+                f"({instrument.serialize()} != {query.instrument.serialize()})"
+            )
+        try:
+            timeframe = parse_timeframe(bar.timeframe)
+        except ValueError as exc:
+            return f"stored bar timeframe is invalid ({exc})"
+        if timeframe != query.timeframe:
+            return (
+                "stored bar timeframe does not match query "
+                f"({timeframe.canonical} != {query.timeframe.canonical})"
             )
     return None
 

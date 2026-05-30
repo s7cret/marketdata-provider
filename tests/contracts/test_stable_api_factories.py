@@ -13,12 +13,14 @@ from marketdata_provider.contracts import (
     BarSeries,
     CandleStore,
     CoverageReport,
+    CoverageValidationError,
     InstrumentKey,
     LiveKlineClient,
     LiveKlineEvent,
     MarketDataProvider,
     parse_timeframe,
 )
+from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.streaming import KlineUpdate
 from marketdata_provider.streaming.live import LiveKlineEvent as RawLiveKlineEvent
 
@@ -96,6 +98,51 @@ def test_candle_store_write_rejects_mixed_series_before_persisting(tmp_path: Pat
     assert result.error is not None
     assert "instrument does not match" in result.error
     assert store.read(query).bars == ()
+
+
+@pytest.mark.parametrize(
+    ("stored_exchange", "stored_market", "stored_symbol", "stored_timeframe", "message"),
+    [
+        ("bybit", "linear", "ETHUSDT", "1m", "instrument does not match"),
+        ("binance", "spot", "BTCUSDT", "5m", "timeframe does not match"),
+    ],
+)
+def test_candle_store_read_rejects_rows_with_mismatched_embedded_identity(
+    tmp_path: Path,
+    stored_exchange: str,
+    stored_market: str,
+    stored_symbol: str,
+    stored_timeframe: str,
+    message: str,
+) -> None:
+    store = create_candle_store(MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path)))
+    query = _query()
+    corrupt_bar = MarketBar(
+        time=60_000,
+        open=1.0,
+        high=1.0,
+        low=1.0,
+        close=1.0,
+        volume=1.0,
+        time_close=119_999,
+        exchange=stored_exchange,
+        market=stored_market,
+        symbol=stored_symbol,
+        timeframe=stored_timeframe,
+        source_transport="ws",
+        source_kind="trade_kline",
+        is_closed=True,
+    )
+    store.store.segments.replace_all(  # type: ignore[attr-defined]
+        [corrupt_bar],
+        exchange=query.instrument.exchange,
+        market=query.instrument.market,
+        symbol=query.instrument.symbol,
+        timeframe=query.timeframe.canonical,
+    )
+
+    with pytest.raises(CoverageValidationError, match=message):
+        store.read(query)
 
 
 def test_create_provider_can_wrap_offline_data_as_canonical_protocol(tmp_path: Path) -> None:
