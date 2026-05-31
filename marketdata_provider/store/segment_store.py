@@ -139,7 +139,7 @@ class SegmentStore:
             fmt = manifest.get("data_format", fmt)
         data_path, _ = self._paths(exchange=exchange, market=market, symbol=symbol, timeframe=timeframe, source_kind=source_kind, data_format=fmt)
         if not data_path.exists():
-            return []
+            return list()
         bars = self._read_parquet(data_path) if fmt == "parquet" else self._read_csv(data_path)
         validate_bars([b.to_bar() for b in bars])
         if manifest_path.exists():

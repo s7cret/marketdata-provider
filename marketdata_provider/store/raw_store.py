@@ -65,7 +65,7 @@ class RawStore:
         d = self._dir(exchange=exchange, market=market, symbol=symbol, source_transport=source_transport, source_kind=source_kind)
         manifest_path = d / "manifest.json"
         if not manifest_path.exists():
-            return []
+            return list()
         manifest = json.loads(manifest_path.read_text())
         data = self._decompress((d / manifest["file_name"]).read_bytes(), manifest.get("compression", "plain"))
         actual = hashlib.sha256(data).hexdigest()
