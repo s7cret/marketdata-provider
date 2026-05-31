@@ -14,6 +14,8 @@ def normalize_binance_klines(rows: Sequence[Sequence[Any]], *, symbol: str, mark
         if len(r) < 6: raise MDInvalidExchangeResponse("Binance kline row too short")
         open_time = int(r[0])
         close_time = int(r[6]) if len(r) > 6 and r[6] is not None else close_time_ms(open_time, timeframe)
+        if close_time <= open_time:
+            close_time = close_time_ms(open_time, timeframe)
         bars.append(MarketBar(
             time=open_time, open=float(r[1]), high=float(r[2]), low=float(r[3]), close=float(r[4]), volume=float(r[5]), time_close=close_time,
             exchange="binance", market=market, symbol=symbol.upper(), timeframe=timeframe, source="fixture", is_closed=True,

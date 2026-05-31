@@ -8,6 +8,13 @@ def test_binance_normalizes_and_excludes_open():
     bars = normalize_binance_klines(rows, symbol="BTCUSDT", market="spot", timeframe="1m", server_time_ms=70_000)
     assert len(bars) == 1 and bars[0].time == 1000
 
+def test_binance_repairs_zero_duration_historical_kline():
+    rows = [[1504713600000, "1", "1", "1", "1", "0", 1504713600000]]
+
+    bars = normalize_binance_klines(rows, symbol="BTCUSDT", market="spot", timeframe="15m")
+
+    assert bars[0].time_close == 1504714499999
+
 def test_bybit_sorts_newest_first():
     payload = {"result": {"list": [[61000,"1.5","2","1","1.2","5","7"],[1000,"1","2","0.5","1.5","10","15"]]}}
     bars = normalize_bybit_klines(payload, symbol="BTCUSDT", market="linear", timeframe="1m", server_time_ms=200_000)

@@ -22,6 +22,7 @@ from marketdata_provider.errors import MDUnsupportedFeature
 from marketdata_provider.exchanges.binance.provider import binance_get_bars_sync
 from marketdata_provider.exchanges.bybit.provider import bybit_get_bars_sync
 from marketdata_provider.providers.offline import OfflineDataProvider
+from marketdata_provider.store.candle_store import market_bar_checksum
 from marketdata_provider.store.candle_store import CandleStore as SegmentCandleStore
 
 
@@ -134,20 +135,51 @@ class _CandleStoreAdapter:
             error = _series_write_error(series)
             if error is not None:
                 return StoreResult(success=False, rows_written=0, error=error)
-            for bar in series.bars:
-                market_bar = contract_to_market_bar(bar)
-                if market_bar.is_closed:
-                    result = self.store.commit_closed(market_bar)
-                else:
-                    result = self.store.upsert_open(market_bar)
-                if result.status in {"committed", "upserted"}:
-                    rows_written += 1
+            market_bars = [contract_to_market_bar(bar) for bar in series.bars]
+            if _can_bulk_write_closed(market_bars):
+                rows_written = self._bulk_write_closed(market_bars)
+            else:
+                for market_bar in market_bars:
+                    if market_bar.is_closed:
+                        result = self.store.commit_closed(market_bar)
+                    else:
+                        result = self.store.upsert_open(market_bar)
+                    if result.status in {"committed", "upserted"}:
+                        rows_written += 1
         except Exception as exc:
             return StoreResult(success=False, rows_written=rows_written, error=str(exc))
         return StoreResult(success=True, rows_written=rows_written)
 
     def coverage(self, query: BarQuery) -> CoverageReport:
         return self.read(query).coverage
+
+    def _bulk_write_closed(self, bars: list[MarketBar]) -> int:
+        first = bars[0]
+        existing = self.store.segments.read_all(
+            exchange=first.exchange,
+            market=first.market,
+            symbol=first.symbol,
+            timeframe=first.timeframe,
+            source_kind=first.source_kind,
+        )
+        by_time = {bar.time: bar for bar in existing}
+        rows_written = 0
+        for bar in bars:
+            current = by_time.get(bar.time)
+            if current is not None and market_bar_checksum(current) != market_bar_checksum(bar):
+                raise ValueError(f"conflicting closed candle at {bar.time}")
+            if current is None:
+                rows_written += 1
+            by_time[bar.time] = bar
+        self.store.segments.replace_all(
+            list(by_time.values()),
+            exchange=first.exchange,
+            market=first.market,
+            symbol=first.symbol,
+            timeframe=first.timeframe,
+            source_kind=first.source_kind,
+        )
+        return rows_written
 
 
 def _series_write_error(series: BarSeries) -> str | None:
@@ -165,6 +197,20 @@ def _series_write_error(series: BarSeries) -> str | None:
                 f"({bar.timeframe.canonical} != {series.query.timeframe.canonical})"
             )
     return None
+
+
+def _can_bulk_write_closed(bars: list[MarketBar]) -> bool:
+    if not bars or not all(bar.is_closed for bar in bars):
+        return False
+    first = bars[0]
+    return all(
+        bar.exchange == first.exchange
+        and bar.market == first.market
+        and bar.symbol == first.symbol
+        and bar.timeframe == first.timeframe
+        and bar.source_kind == first.source_kind
+        for bar in bars
+    )
 
 
 def _stored_bars_read_error(query: BarQuery, bars: tuple[MarketBar, ...]) -> str | None:
