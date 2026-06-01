@@ -10,6 +10,7 @@ from marketdata_provider.contracts.timeframe import parse_timeframe
 from marketdata_provider.errors import MDNetworkUnavailable
 from marketdata_provider.exchanges.binance import provider as binance_provider
 from marketdata_provider.exchanges.bybit import provider as bybit_provider
+from marketdata_provider.factories import create_candle_store
 from marketdata_provider.service import MarketDataService
 
 
@@ -125,6 +126,37 @@ def test_marketdata_service_daily_aggregation_uses_first_traded_open(tmp_path):
     assert len(series.bars) == 1
     assert series.bars[0].open == 8.0
     assert series.bars[0].close == 9.0
+
+
+def test_candle_store_write_is_idempotent_across_provider_provenance(tmp_path):
+    query = BarQuery(
+        instrument=InstrumentKey("binance", "spot", "BTCUSDT"),
+        timeframe=parse_timeframe("15m"),
+        start_ms=0,
+        end_ms=900000,
+    )
+    provider = MarketDataService(MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))).fetch_bars
+
+    monthly = (
+        tmp_path
+        / "archives"
+        / "binance_klines"
+        / "spot"
+        / "monthly"
+        / "BTCUSDT"
+        / "15m"
+        / "BTCUSDT-15m-1970-01.zip"
+    )
+    monthly.parent.mkdir(parents=True)
+    with ZipFile(monthly, "w") as zf:
+        zf.writestr("BTCUSDT-15m-1970-01.csv", "0,1,2,0.5,1.5,10,899999\n")
+
+    series = provider(query)
+    store = create_candle_store(MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path)))
+    result = store.write(series)
+
+    assert result.success
+    assert result.rows_written == 0
 
 
 def test_bybit_reverse_sort_pagination_and_open_candle_exclusion(monkeypatch):

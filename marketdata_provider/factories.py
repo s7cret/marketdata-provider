@@ -21,7 +21,6 @@ from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.errors import MDUnsupportedFeature
 from marketdata_provider.providers.offline import OfflineDataProvider
 from marketdata_provider.service import MarketDataService
-from marketdata_provider.store.candle_store import market_bar_checksum
 from marketdata_provider.store.candle_store import CandleStore as SegmentCandleStore
 
 
@@ -145,7 +144,7 @@ class _CandleStoreAdapter:
         rows_written = 0
         for bar in bars:
             current = by_time.get(bar.time)
-            if current is not None and market_bar_checksum(current) != market_bar_checksum(bar):
+            if current is not None and not _same_candle_payload(current, bar):
                 raise ValueError(f"conflicting closed candle at {bar.time}")
             if current is None:
                 rows_written += 1
@@ -159,6 +158,29 @@ class _CandleStoreAdapter:
             source_kind=first.source_kind,
         )
         return rows_written
+
+
+def _same_candle_payload(left: MarketBar, right: MarketBar) -> bool:
+    """Return true when the candle data is identical regardless of provenance."""
+
+    return (
+        left.time == right.time
+        and left.time_close == right.time_close
+        and left.open == right.open
+        and left.high == right.high
+        and left.low == right.low
+        and left.close == right.close
+        and left.volume == right.volume
+        and left.exchange.lower() == right.exchange.lower()
+        and left.market.lower() == right.market.lower()
+        and left.symbol.upper() == right.symbol.upper()
+        and parse_timeframe(left.timeframe) == parse_timeframe(right.timeframe)
+        and left.source_kind == right.source_kind
+        and left.is_closed == right.is_closed
+        and left.quote_volume == right.quote_volume
+        and left.turnover == right.turnover
+        and left.trades_count == right.trades_count
+    )
 
 
 def _series_write_error(series: BarSeries) -> str | None:
