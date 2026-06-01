@@ -19,9 +19,8 @@ from marketdata_provider.contracts.series import BarSeries, CoverageReport, Stor
 from marketdata_provider.contracts.timeframe import Timeframe, parse_timeframe
 from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.errors import MDUnsupportedFeature
-from marketdata_provider.exchanges.binance.provider import binance_get_bars_sync
-from marketdata_provider.exchanges.bybit.provider import bybit_get_bars_sync
 from marketdata_provider.providers.offline import OfflineDataProvider
+from marketdata_provider.service import MarketDataService
 from marketdata_provider.store.candle_store import market_bar_checksum
 from marketdata_provider.store.candle_store import CandleStore as SegmentCandleStore
 
@@ -68,33 +67,13 @@ def create_live_kline_client(
 class _ExchangeProviderAdapter:
     def __init__(self, config: MarketDataConfig):
         self.config = config
+        self.service = MarketDataService(config)
 
     def fetch_bars(self, query: BarQuery) -> BarSeries:
         exchange = (self.config.default_exchange or query.instrument.exchange).lower()
-        market = self.config.default_market or query.instrument.market
-        if exchange == "binance":
-            bars = binance_get_bars_sync(
-                query.instrument.symbol,
-                query.timeframe.canonical,
-                query.start_ms,
-                query.end_ms,
-                self.config.binance,
-                market=market,
-                include_open_candle=self.config.include_open_candle,
-            )
-        elif exchange == "bybit":
-            bars = bybit_get_bars_sync(
-                query.instrument.symbol,
-                query.timeframe.canonical,
-                query.start_ms,
-                query.end_ms,
-                self.config.bybit,
-                market=market,
-                include_open_candle=self.config.include_open_candle,
-            )
-        else:
+        if exchange not in {"binance", "bybit"}:
             raise MDUnsupportedFeature(f"Unsupported provider exchange: {exchange}")
-        return series_from_core_bars(query, bars, source="provider")
+        return self.service.fetch_bars(query)
 
 
 class _OfflineProviderAdapter:

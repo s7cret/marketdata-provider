@@ -1,12 +1,16 @@
-import json
+from zipfile import ZipFile
 
 import httpx
 import pytest
 
-from marketdata_provider.config import BinanceConfig, BybitConfig
+from marketdata_provider.config import BinanceConfig, BybitConfig, MarketDataConfig, StorageConfig
+from marketdata_provider.contracts.instrument import InstrumentKey
+from marketdata_provider.contracts.query import BarQuery
+from marketdata_provider.contracts.timeframe import parse_timeframe
 from marketdata_provider.errors import MDNetworkUnavailable
 from marketdata_provider.exchanges.binance import provider as binance_provider
 from marketdata_provider.exchanges.bybit import provider as bybit_provider
+from marketdata_provider.service import MarketDataService
 
 
 def _client_factory(monkeypatch, module, handler):
@@ -44,6 +48,51 @@ def test_binance_rate_limit_error(monkeypatch):
     with pytest.raises(MDNetworkUnavailable) as e:
         binance_provider.binance_get_bars_sync("BINANCE:BTCUSDT", "1m", None, None, BinanceConfig(), market="spot", max_retries=0)
     assert "rate limit" in e.value.message.lower()
+
+
+def test_marketdata_service_archive_first_uses_daily_then_monthly_cache(tmp_path):
+    daily = (
+        tmp_path
+        / "archives"
+        / "binance_klines"
+        / "spot"
+        / "daily"
+        / "BTCUSDT"
+        / "1m"
+        / "BTCUSDT-1m-1970-01-01.zip"
+    )
+    monthly = (
+        tmp_path
+        / "archives"
+        / "binance_klines"
+        / "spot"
+        / "monthly"
+        / "BTCUSDT"
+        / "1m"
+        / "BTCUSDT-1m-1970-01.zip"
+    )
+    daily.parent.mkdir(parents=True)
+    monthly.parent.mkdir(parents=True)
+    with ZipFile(daily, "w") as zf:
+        zf.writestr("BTCUSDT-1m-1970-01-01.csv", "0,1,1,1,1,1,59999\n")
+    with ZipFile(monthly, "w") as zf:
+        zf.writestr(
+            "BTCUSDT-1m-1970-01.csv",
+            "0,1,1,1,1,1,59999\n60799,2,2.5,1.5,2.1,4,120798\n120000,3,3,3,3,3,179999\n",
+        )
+
+    series = MarketDataService(MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))).fetch_bars(
+        BarQuery(
+            instrument=InstrumentKey("binance", "spot", "BTCUSDT"),
+            timeframe=parse_timeframe("1m"),
+            start_ms=0,
+            end_ms=180000,
+        )
+    )
+
+    assert [bar.time for bar in series.bars] == [0, 60000, 120000]
+    assert series.bars[1].open == 2.0
+    assert series.bars[1].time_close == 119999
 
 
 def test_bybit_reverse_sort_pagination_and_open_candle_exclusion(monkeypatch):

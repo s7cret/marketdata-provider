@@ -1,6 +1,6 @@
 from marketdata_provider.core.bar import Bar, MarketBar, RUNTIME_CONTRACT_VERSION
 from marketdata_provider.core.protocols import DataProvider, HistoricalDataProvider, IntrabarDataProvider, LowerTimeframeDataProvider
-from marketdata_provider.config import MarketDataConfig, BinanceConfig, BybitConfig, StreamingConfig, StorageConfig, OfflineDataConfig
+from marketdata_provider.config import MarketDataConfig, BinanceConfig, BybitConfig, HistoryConfig, StreamingConfig, StorageConfig, OfflineDataConfig
 from marketdata_provider.contracts import (
     Bar as ContractBar,
     BarQuery,
@@ -23,7 +23,7 @@ __version__ = "2.17.0"
 __all__ = [
     "Bar", "MarketBar", "DataProvider", "HistoricalDataProvider",
     "IntrabarDataProvider", "LowerTimeframeDataProvider",
-    "MarketDataConfig", "BinanceConfig", "BybitConfig", "StreamingConfig",
+    "MarketDataConfig", "BinanceConfig", "BybitConfig", "HistoryConfig", "StreamingConfig",
     "StorageConfig", "OfflineDataConfig", "OfflineDataProvider",
     "BarQuery", "BarSeries", "CandleStore", "ContractBar",
     "ContractMarketDataProvider", "CoverageReport", "InstrumentKey",

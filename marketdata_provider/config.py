@@ -31,6 +31,13 @@ class StorageConfig:
     sqlite_metadata: bool = False
 
 @dataclass(frozen=True, slots=True)
+class HistoryConfig:
+    enabled: bool = True
+    archive_first: bool = True
+    base_timeframe: str = "1m"
+    recent_lag_days: int = 2
+
+@dataclass(frozen=True, slots=True)
 class OfflineDataConfig:
     root: Path | None = None
     assume_utc: bool = True
@@ -43,6 +50,7 @@ class MarketDataConfig:
     default_market: str | None = None
     binance: BinanceConfig = field(default_factory=BinanceConfig)
     bybit: BybitConfig = field(default_factory=BybitConfig)
+    history: HistoryConfig = field(default_factory=HistoryConfig)
     streaming: StreamingConfig = field(default_factory=StreamingConfig)
     storage: StorageConfig = field(default_factory=StorageConfig)
     offline: OfflineDataConfig = field(default_factory=OfflineDataConfig)
