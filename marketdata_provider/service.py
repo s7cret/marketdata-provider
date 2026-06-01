@@ -229,13 +229,15 @@ def _aggregate_market_bars(bars: list[MarketBar], *, query: BarQuery) -> list[Ma
     out: list[MarketBar] = []
     for bucket_time in sorted(buckets):
         bucket = sorted(buckets[bucket_time], key=lambda item: item.time)
+        traded = [bar for bar in bucket if bar.volume > 0]
+        price_bucket = traded or bucket
         out.append(
             MarketBar(
                 time=bucket_time,
-                open=bucket[0].open,
+                open=price_bucket[0].open,
                 high=max(bar.high for bar in bucket),
                 low=min(bar.low for bar in bucket),
-                close=bucket[-1].close,
+                close=price_bucket[-1].close,
                 volume=sum(bar.volume for bar in bucket),
                 time_close=close_time_ms(bucket_time, query.timeframe.canonical),
                 exchange=query.instrument.exchange,

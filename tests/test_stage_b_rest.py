@@ -95,6 +95,38 @@ def test_marketdata_service_archive_first_uses_daily_then_monthly_cache(tmp_path
     assert series.bars[1].time_close == 119999
 
 
+def test_marketdata_service_daily_aggregation_uses_first_traded_open(tmp_path):
+    monthly = (
+        tmp_path
+        / "archives"
+        / "binance_klines"
+        / "spot"
+        / "monthly"
+        / "BTCUSDT"
+        / "1m"
+        / "BTCUSDT-1m-1970-01.zip"
+    )
+    monthly.parent.mkdir(parents=True)
+    with ZipFile(monthly, "w") as zf:
+        zf.writestr(
+            "BTCUSDT-1m-1970-01.csv",
+            "0,10,10,10,10,0,59999\n60000,8,11,7,9,2,119999\n120000,9,9,9,9,0,179999\n",
+        )
+
+    series = MarketDataService(MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))).fetch_bars(
+        BarQuery(
+            instrument=InstrumentKey("binance", "spot", "BTCUSDT"),
+            timeframe=parse_timeframe("1D"),
+            start_ms=0,
+            end_ms=86_400_000,
+        )
+    )
+
+    assert len(series.bars) == 1
+    assert series.bars[0].open == 8.0
+    assert series.bars[0].close == 9.0
+
+
 def test_bybit_reverse_sort_pagination_and_open_candle_exclusion(monkeypatch):
     calls = []
     def handler(request: httpx.Request) -> httpx.Response:
