@@ -39,10 +39,10 @@ def fetch_binance_archive_bars(
 ) -> list[Bar]:
     """Fetch Binance archive klines for a closed historical range.
 
-    Monthly ZIPs are preferred for multi-day ranges because they are the
-    authoritative Binance historical archive in old BTCUSDT edge cases where
-    daily ZIPs and REST disagree. Daily ZIPs are still used for narrow ranges
-    to avoid downloading a full month for a one-day repair.
+    Monthly ZIPs are preferred for authoritative historical reads because old
+    BTCUSDT daily ZIPs can match REST while the monthly ZIP contains different
+    shifted historical rows used by TradingView. Daily ZIPs are only a fallback
+    when the monthly archive is unavailable or incomplete.
     """
 
     if start >= end or _archive_market_path(market) is None:
@@ -53,26 +53,7 @@ def fetch_binance_archive_bars(
 
     archive_root = Path(cache_dir) / "archives" / "binance_klines"
     intervals = ((start, end),)
-    days = _days_for_intervals(intervals)
-    if len(days) <= 2:
-        bars: list[Bar] = []
-        for year, month, day in days:
-            bars.extend(
-                _load_archive_file(
-                    symbol=symbol,
-                    market=market,
-                    timeframe=timeframe,
-                    start=start,
-                    end=end,
-                    period="daily",
-                    suffix=f"{year:04d}-{month:02d}-{day:02d}",
-                    cache_dir=archive_root,
-                )
-            )
-        if _range_coverage_complete(bars, start=start, end=end, duration=duration):
-            return bars
-
-    bars = []
+    bars: list[Bar] = []
     for year, month in _months_for_intervals(intervals):
         bars.extend(
             _load_archive_file(
@@ -86,7 +67,27 @@ def fetch_binance_archive_bars(
                 cache_dir=archive_root,
             )
         )
-    return _dedupe_sorted(bars)
+    bars = _dedupe_sorted(bars)
+    if _range_coverage_complete(bars, start=start, end=end, duration=duration):
+        return bars
+
+    daily_bars: list[Bar] = []
+    for year, month, day in _days_for_intervals(intervals):
+        daily_bars.extend(
+            _load_archive_file(
+                symbol=symbol,
+                market=market,
+                timeframe=timeframe,
+                start=start,
+                end=end,
+                period="daily",
+                suffix=f"{year:04d}-{month:02d}-{day:02d}",
+                cache_dir=archive_root,
+            )
+        )
+    if _range_coverage_complete(daily_bars, start=start, end=end, duration=duration):
+        return daily_bars
+    return bars
 
 
 def fill_binance_archive_gaps(

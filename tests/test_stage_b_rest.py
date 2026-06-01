@@ -51,7 +51,7 @@ def test_binance_rate_limit_error(monkeypatch):
     assert "rate limit" in e.value.message.lower()
 
 
-def test_marketdata_service_archive_first_uses_daily_then_monthly_cache(tmp_path):
+def test_marketdata_service_archive_first_prefers_monthly_cache(tmp_path):
     daily = (
         tmp_path
         / "archives"
@@ -94,6 +94,34 @@ def test_marketdata_service_archive_first_uses_daily_then_monthly_cache(tmp_path
     assert [bar.time for bar in series.bars] == [0, 60000, 120000]
     assert series.bars[1].open == 2.0
     assert series.bars[1].time_close == 119999
+
+
+def test_marketdata_service_archive_first_falls_back_to_daily_cache(tmp_path):
+    daily = (
+        tmp_path
+        / "archives"
+        / "binance_klines"
+        / "spot"
+        / "daily"
+        / "BTCUSDT"
+        / "1m"
+        / "BTCUSDT-1m-1970-01-01.zip"
+    )
+    daily.parent.mkdir(parents=True)
+    with ZipFile(daily, "w") as zf:
+        zf.writestr("BTCUSDT-1m-1970-01-01.csv", "0,1,1,1,1,1,59999\n60000,2,2,2,2,2,119999\n")
+
+    series = MarketDataService(MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))).fetch_bars(
+        BarQuery(
+            instrument=InstrumentKey("binance", "spot", "BTCUSDT"),
+            timeframe=parse_timeframe("1m"),
+            start_ms=0,
+            end_ms=120000,
+        )
+    )
+
+    assert [bar.time for bar in series.bars] == [0, 60000]
+    assert series.bars[1].open == 2.0
 
 
 def test_marketdata_service_daily_aggregation_uses_first_traded_open(tmp_path):
