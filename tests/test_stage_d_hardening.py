@@ -26,6 +26,30 @@ def test_parquet_optional_fails_explicitly_when_pyarrow_missing(tmp_path: Path):
         assert store.read_all(exchange="binance", market="spot", symbol="BTCUSDT", timeframe="1m")[0].time == 0
 
 
+def test_bounded_csv_segment_read_streams_without_full_load(tmp_path: Path, monkeypatch):
+    store = SegmentStore(tmp_path)
+    store.replace_all(
+        [mb(0), mb(60_000, close=1.6), mb(120_000, close=1.7)],
+        exchange="binance",
+        market="spot",
+        symbol="BTCUSDT",
+        timeframe="1m",
+    )
+
+    monkeypatch.setattr(store, "_read_csv", lambda _path: (_ for _ in ()).throw(AssertionError("bounded read should stream")))
+
+    bars = store.read_all(
+        exchange="binance",
+        market="spot",
+        symbol="BTCUSDT",
+        timeframe="1m",
+        start=60_000,
+        end=120_000,
+    )
+
+    assert [b.time for b in bars] == [60_000]
+
+
 def test_raw_store_plain_ndjson_manifest_checksum(tmp_path: Path):
     store = RawStore(tmp_path)
     manifest = store.write_batch([{"b": 2, "a": 1}], exchange="binance", market="spot", symbol="BTCUSDT", source_transport="ws")

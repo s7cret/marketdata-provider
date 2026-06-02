@@ -14,7 +14,7 @@ from typing import Iterable, Iterator, Literal
 
 from marketdata_provider.core.bar import MarketBar, RUNTIME_CONTRACT_VERSION
 from marketdata_provider.errors import MDInvalidExchangeResponse, MDUnsupportedFeature
-from marketdata_provider.timeframes import canonical_timeframe
+from marketdata_provider.timeframes import canonical_timeframe, timeframe_ms
 from marketdata_provider.validation import validate_bars
 
 SegmentFormat = Literal["csv", "parquet"]
@@ -138,18 +138,21 @@ class SegmentStore:
     def read_all(self, *, exchange: str, market: str, symbol: str, timeframe: str, source_kind: str = "trade_kline", start: int | None = None, end: int | None = None) -> list[MarketBar]:
         manifest_path = self._dir(exchange=exchange, market=market, symbol=symbol, timeframe=timeframe, source_kind=source_kind) / "manifest.json"
         fmt = self.data_format
+        manifest: dict[str, object] | None = None
         if manifest_path.exists():
             manifest = json.loads(manifest_path.read_text())
             fmt = manifest.get("data_format", fmt)
+            self._validate_manifest_contract(manifest)
         data_path, _ = self._paths(exchange=exchange, market=market, symbol=symbol, timeframe=timeframe, source_kind=source_kind, data_format=fmt)
         if not data_path.exists():
             return list()
+        if fmt == "csv" and (start is not None or end is not None):
+            bars = list(self._iter_csv_range(data_path, start=start, end=end, manifest=manifest))
+            validate_bars([b.to_bar() for b in bars])
+            return bars
         bars = self._read_parquet(data_path) if fmt == "parquet" else self._read_csv(data_path)
         validate_bars([b.to_bar() for b in bars])
-        if manifest_path.exists():
-            manifest = json.loads(manifest_path.read_text())
-            if manifest.get("runtime_contract_version") != RUNTIME_CONTRACT_VERSION:
-                raise MDInvalidExchangeResponse("Unsupported segment runtime contract", details=manifest)
+        if manifest is not None:
             actual = bars_checksum(bars)
             if actual != manifest.get("checksum"):
                 raise MDInvalidExchangeResponse("Segment checksum mismatch", details={"expected": manifest.get("checksum"), "actual": actual})
@@ -161,6 +164,7 @@ class SegmentStore:
         if manifest_path.exists():
             manifest = json.loads(manifest_path.read_text())
             fmt = manifest.get("data_format", fmt)
+            self._validate_manifest_contract(manifest)
         data_path, _ = self._paths(exchange=exchange, market=market, symbol=symbol, timeframe=timeframe, source_kind=source_kind, data_format=fmt)
         if not data_path.exists():
             return
@@ -168,14 +172,7 @@ class SegmentStore:
             for bar in self.read_all(exchange=exchange, market=market, symbol=symbol, timeframe=timeframe, source_kind=source_kind, start=start, end=end):
                 yield bar
             return
-        with data_path.open(newline="") as fh:
-            for row in csv.DictReader(fh):
-                bar = self._row_to_bar(row)
-                if start is not None and bar.time < start:
-                    continue
-                if end is not None and bar.time >= end:
-                    break
-                yield bar
+        yield from self._iter_csv_range(data_path, start=start, end=end, manifest=manifest if manifest_path.exists() else None)
 
     def manifest_for(self, *, exchange: str, market: str, symbol: str, timeframe: str, source_kind: str = "trade_kline") -> SegmentManifest | None:
         manifest_path = self._dir(exchange=exchange, market=market, symbol=symbol, timeframe=timeframe, source_kind=source_kind) / "manifest.json"
@@ -303,6 +300,68 @@ class SegmentStore:
 
     def _read_csv(self, path: Path) -> list[MarketBar]:
         return [self._row_to_bar(r) for r in csv.DictReader(path.open(newline=""))]
+
+    def _iter_csv_range(self, path: Path, *, start: int | None, end: int | None, manifest: dict[str, object] | None = None) -> Iterator[MarketBar]:
+        with path.open(newline="") as fh:
+            fieldnames = next(csv.reader([fh.readline()]))
+            if start is not None and manifest is not None:
+                self._seek_csv_near_start(fh, path, start=start, manifest=manifest)
+            reader = csv.DictReader(fh, fieldnames=fieldnames)
+            for row in reader:
+                bar = self._row_to_bar(row)
+                if start is not None and bar.time < start:
+                    continue
+                if end is not None and bar.time >= end:
+                    break
+                yield bar
+
+    def _validate_manifest_contract(self, manifest: dict[str, object]) -> None:
+        if manifest.get("runtime_contract_version") != RUNTIME_CONTRACT_VERSION:
+            raise MDInvalidExchangeResponse("Unsupported segment runtime contract", details=manifest)
+
+    def _seek_csv_near_start(self, fh, path: Path, *, start: int, manifest: dict[str, object]) -> None:
+        start_time = manifest.get("start_time")
+        rows_count = manifest.get("rows_count")
+        timeframe = manifest.get("timeframe")
+        if not isinstance(start_time, int) or not isinstance(rows_count, int) or rows_count <= 0 or not isinstance(timeframe, str):
+            return
+        try:
+            duration = timeframe_ms(timeframe)
+        except Exception:
+            return
+        if duration <= 0 or start <= start_time:
+            return
+
+        header_end = fh.tell()
+        file_size = path.stat().st_size
+        if file_size <= header_end:
+            return
+        low = header_end
+        high = file_size - 1
+        best = header_end
+        for _ in range(24):
+            if low >= high:
+                break
+            mid = (low + high) // 2
+            fh.seek(mid)
+            if mid > header_end:
+                fh.readline()
+            candidate_pos = fh.tell()
+            line = fh.readline()
+            if not line:
+                high = max(header_end, mid - 1)
+                continue
+            try:
+                candidate_time = int(line.split(",", 1)[0])
+            except ValueError:
+                fh.seek(header_end)
+                return
+            if candidate_time <= start:
+                best = candidate_pos
+                low = fh.tell()
+            else:
+                high = max(header_end, mid - 1)
+        fh.seek(best)
 
     def _atomic_write_csv(self, path: Path, bars: list[MarketBar]) -> None:
         fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
