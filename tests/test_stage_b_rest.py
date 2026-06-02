@@ -7,11 +7,13 @@ from marketdata_provider.config import BinanceConfig, BybitConfig, MarketDataCon
 from marketdata_provider.contracts.instrument import InstrumentKey
 from marketdata_provider.contracts.query import BarQuery
 from marketdata_provider.contracts.timeframe import parse_timeframe
+from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.errors import MDNetworkUnavailable
 from marketdata_provider.exchanges.binance import provider as binance_provider
 from marketdata_provider.exchanges.bybit import provider as bybit_provider
 from marketdata_provider.factories import create_candle_store
 from marketdata_provider.service import MarketDataService
+from marketdata_provider.store.candle_store import CandleStore
 
 
 def _client_factory(monkeypatch, module, handler):
@@ -20,6 +22,55 @@ def _client_factory(monkeypatch, module, handler):
         kwargs["transport"] = httpx.MockTransport(handler)
         return real_client(*args, **kwargs)
     monkeypatch.setattr(module.httpx, "Client", factory)
+
+
+def _query(timeframe: str, *, start: int = 0, end: int = 1_800_000) -> BarQuery:
+    return BarQuery(
+        instrument=InstrumentKey("binance", "spot", "BTCUSDT"),
+        timeframe=parse_timeframe(timeframe),
+        start_ms=start,
+        end_ms=end,
+    )
+
+
+def _one_minute_bars(count: int = 30) -> list[MarketBar]:
+    bars = []
+    for i in range(count):
+        t = i * 60_000
+        bars.append(
+            MarketBar(
+                time=t,
+                open=float(i),
+                high=float(i) + 0.75,
+                low=float(i) - 0.25,
+                close=float(i) + 0.5,
+                volume=float(i + 1),
+                time_close=t + 59_999,
+                exchange="binance",
+                market="spot",
+                symbol="BTCUSDT",
+                timeframe="1m",
+                source_transport="rest",
+                source_kind="trade_kline",
+                is_closed=True,
+            )
+        )
+    return bars
+
+
+def _assert_derived_15m_from_1m(store: CandleStore) -> None:
+    base = store.get_market_bars(exchange="binance", market="spot", symbol="BTCUSDT", timeframe="1m")
+    derived = store.get_market_bars(exchange="binance", market="spot", symbol="BTCUSDT", timeframe="15m")
+
+    assert len(base) == 30
+    assert [bar.time for bar in derived] == [0, 900_000]
+    assert derived[0].open == 0.0
+    assert derived[0].high == 14.75
+    assert derived[0].low == -0.25
+    assert derived[0].close == 14.5
+    assert derived[0].volume == sum(range(1, 16))
+    assert derived[0].timeframe == "15m"
+    assert derived[0].source_transport == "derived"
 
 
 def test_binance_pagination_and_open_candle_exclusion(monkeypatch):
@@ -154,6 +205,51 @@ def test_marketdata_service_daily_aggregation_uses_first_traded_open(tmp_path):
     assert len(series.bars) == 1
     assert series.bars[0].open == 8.0
     assert series.bars[0].close == 9.0
+
+
+def test_marketdata_service_uses_base_1m_policy_and_materializes_derived_15m(tmp_path, monkeypatch):
+    calls = []
+
+    def fetch_from_source(self, query):
+        calls.append(query)
+        assert query.timeframe == parse_timeframe("1m")
+        return _one_minute_bars()
+
+    monkeypatch.setattr(MarketDataService, "_fetch_from_sources", fetch_from_source)
+
+    service = MarketDataService(MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path)))
+    series = service.fetch_bars(_query("15m"))
+
+    assert len(calls) == 1
+    assert series.query.timeframe == parse_timeframe("15m")
+    assert [bar.time for bar in series.bars] == [0, 900_000]
+    assert series.bars[0].open == 0.0
+    assert series.bars[0].close == 14.5
+    _assert_derived_15m_from_1m(service.store)
+
+
+def test_marketdata_service_materializes_15m_from_warm_1m_cache_without_source_fetch(tmp_path, monkeypatch):
+    store = CandleStore(tmp_path)
+    store.segments.replace_all(
+        _one_minute_bars(),
+        exchange="binance",
+        market="spot",
+        symbol="BTCUSDT",
+        timeframe="1m",
+    )
+
+    def fail_source_fetch(self, query):
+        raise AssertionError(f"source fetch should not run for warm base cache: {query}")
+
+    monkeypatch.setattr(MarketDataService, "_fetch_from_sources", fail_source_fetch)
+
+    service = MarketDataService(MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path)))
+    series = service.fetch_bars(_query("15m"))
+
+    assert [bar.time for bar in series.bars] == [0, 900_000]
+    assert series.bars[1].open == 15.0
+    assert series.bars[1].close == 29.5
+    _assert_derived_15m_from_1m(service.store)
 
 
 def test_candle_store_write_is_idempotent_across_provider_provenance(tmp_path):

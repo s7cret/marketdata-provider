@@ -8,7 +8,7 @@ from marketdata_provider._adapters import series_from_market_bars
 from marketdata_provider.config import MarketDataConfig
 from marketdata_provider.contracts.query import BarQuery
 from marketdata_provider.contracts.series import BarSeries
-from marketdata_provider.contracts.timeframe import parse_timeframe
+from marketdata_provider.contracts.timeframe import Timeframe, parse_timeframe
 from marketdata_provider.core.bar import Bar, MarketBar
 from marketdata_provider.errors import MDUnsupportedFeature
 from marketdata_provider.exchanges.binance.archive import fetch_binance_archive_bars
@@ -96,29 +96,51 @@ class MarketDataService:
 
     def fetch_bars(self, query: BarQuery) -> BarSeries:
         base_query = self._base_query(query)
-        self._ensure_stored(base_query)
-        bars = self.store.get_market_bars(
-            exchange=base_query.instrument.exchange,
-            market=base_query.instrument.market,
-            symbol=base_query.instrument.symbol,
-            timeframe=base_query.timeframe.canonical,
-            start=base_query.start_ms,
-            end=base_query.end_ms,
-        )
         if base_query.timeframe == query.timeframe:
+            self._ensure_stored(base_query)
+            bars = self._stored_bars(base_query)
             return series_from_market_bars(query, bars, source="storage")
+
+        base_changed = self._ensure_stored(base_query)
+        derived = self._stored_bars(query)
+        if not base_changed and _coverage_complete(derived, query):
+            return series_from_market_bars(query, derived, source="storage")
+
+        bars = self._stored_bars(base_query)
         derived = _aggregate_market_bars(bars, query=query)
+        if derived:
+            existing = self.store.get_market_bars(
+                exchange=query.instrument.exchange,
+                market=query.instrument.market,
+                symbol=query.instrument.symbol,
+                timeframe=query.timeframe.canonical,
+            )
+            by_time = {bar.time: bar for bar in existing}
+            for bar in derived:
+                by_time[bar.time] = bar
+            self.store.segments.replace_all(
+                list(by_time.values()),
+                exchange=query.instrument.exchange,
+                market=query.instrument.market,
+                symbol=query.instrument.symbol,
+                timeframe=query.timeframe.canonical,
+            )
+            derived = self._stored_bars(query)
+            return series_from_market_bars(query, derived, source="storage")
         return series_from_market_bars(query, derived, source="storage")
 
     def _base_query(self, query: BarQuery) -> BarQuery:
         if not self.config.history.enabled:
             return query
-        if query.instrument.exchange == "binance" and query.timeframe.canonical in {"1D", "1W", "1M"}:
-            return replace(query, timeframe=parse_timeframe(self.config.history.base_timeframe))
+        if query.instrument.exchange != "binance":
+            return query
+        base_timeframe = parse_timeframe(self.config.history.base_timeframe)
+        if _can_derive_from_base(query, base_timeframe):
+            return replace(query, timeframe=base_timeframe)
         return query
 
-    def _ensure_stored(self, query: BarQuery) -> None:
-        current = self.store.get_market_bars(
+    def _stored_bars(self, query: BarQuery) -> list[MarketBar]:
+        return self.store.get_market_bars(
             exchange=query.instrument.exchange,
             market=query.instrument.market,
             symbol=query.instrument.symbol,
@@ -126,11 +148,14 @@ class MarketDataService:
             start=query.start_ms,
             end=query.end_ms,
         )
+
+    def _ensure_stored(self, query: BarQuery) -> bool:
+        current = self._stored_bars(query)
         if _coverage_complete(current, query):
-            return
+            return False
         fetched = self._fetch_from_sources(query)
         if not fetched:
-            return
+            return False
         by_time = {bar.time: bar for bar in current}
         for bar in fetched:
             by_time[bar.time] = bar
@@ -141,6 +166,7 @@ class MarketDataService:
             symbol=query.instrument.symbol,
             timeframe=query.timeframe.canonical,
         )
+        return True
 
     def _fetch_from_sources(self, query: BarQuery) -> list[MarketBar]:
         if query.instrument.exchange == "binance":
@@ -188,6 +214,16 @@ def _coverage_complete(bars: list[MarketBar], query: BarQuery) -> bool:
         return bool(bars)
     present = {bar.time for bar in bars}
     return all(ts in present for ts in range(query.start_ms, query.end_ms, duration))
+
+
+def _can_derive_from_base(query: BarQuery, base_timeframe: Timeframe) -> bool:
+    query_duration = query.timeframe.duration_ms
+    base_duration = base_timeframe.duration_ms
+    if query_duration is None or base_duration is None:
+        return False
+    if base_duration > query_duration:
+        return False
+    return query_duration % base_duration == 0
 
 
 def _remaining_recent_query(
