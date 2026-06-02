@@ -44,14 +44,34 @@ class RawStore:
         self.compression: Compression = compression
         self.root.mkdir(parents=True, exist_ok=True)
 
-    def _dir(self, *, exchange: str, market: str, symbol: str, source_transport: str, source_kind: str) -> Path:
-        return self.root / "raw-v1" / f"exchange={exchange.lower()}" / f"market={market.lower()}" / f"symbol={symbol.upper()}" / f"transport={source_transport}" / f"source={source_kind}"
+    def _dir(
+        self,
+        *,
+        exchange: str,
+        market: str,
+        symbol: str,
+        source_transport: str,
+        source_kind: str,
+        partition: str | None = None,
+    ) -> Path:
+        path = self.root / "raw-v1" / f"exchange={exchange.lower()}" / f"market={market.lower()}" / f"symbol={symbol.upper()}" / f"transport={source_transport}" / f"source={source_kind}"
+        return path / f"partition={partition}" if partition else path
 
-    def write_batch(self, payloads: Iterable[dict[str, Any]], *, exchange: str, market: str, symbol: str, source_transport: str, source_kind: str = "trade_kline") -> RawManifest:
+    def write_batch(
+        self,
+        payloads: Iterable[dict[str, Any]],
+        *,
+        exchange: str,
+        market: str,
+        symbol: str,
+        source_transport: str,
+        source_kind: str = "trade_kline",
+        partition: str | None = None,
+    ) -> RawManifest:
         rows = [json.dumps(p, sort_keys=True, separators=(",", ":")) for p in payloads]
         body = "".join(r + "\n" for r in rows).encode()
         checksum = hashlib.sha256(body).hexdigest()
-        d = self._dir(exchange=exchange, market=market, symbol=symbol, source_transport=source_transport, source_kind=source_kind)
+        d = self._dir(exchange=exchange, market=market, symbol=symbol, source_transport=source_transport, source_kind=source_kind, partition=partition)
         d.mkdir(parents=True, exist_ok=True)
         suffix = ".ndjson.zst" if self.compression == "zstd" else ".ndjson"
         file_name = f"payloads-{checksum[:16]}{suffix}"
@@ -61,8 +81,17 @@ class RawStore:
         self._atomic_write_text(d / "manifest.json", json.dumps(asdict(manifest), sort_keys=True, indent=2) + "\n")
         return manifest
 
-    def read_batch(self, *, exchange: str, market: str, symbol: str, source_transport: str, source_kind: str = "trade_kline") -> list[dict[str, Any]]:
-        d = self._dir(exchange=exchange, market=market, symbol=symbol, source_transport=source_transport, source_kind=source_kind)
+    def read_batch(
+        self,
+        *,
+        exchange: str,
+        market: str,
+        symbol: str,
+        source_transport: str,
+        source_kind: str = "trade_kline",
+        partition: str | None = None,
+    ) -> list[dict[str, Any]]:
+        d = self._dir(exchange=exchange, market=market, symbol=symbol, source_transport=source_transport, source_kind=source_kind, partition=partition)
         manifest_path = d / "manifest.json"
         if not manifest_path.exists():
             return list()
@@ -72,6 +101,19 @@ class RawStore:
         if actual != manifest.get("checksum"):
             raise MDUnsupportedFeature("RawStore checksum mismatch", details={"expected": manifest.get("checksum"), "actual": actual})
         return [json.loads(line) for line in data.decode().splitlines() if line.strip()]
+
+    def read_partitions(self, *, exchange: str, market: str, symbol: str, source_transport: str, source_kind: str) -> list[dict[str, Any]]:
+        root = self._dir(exchange=exchange, market=market, symbol=symbol, source_transport=source_transport, source_kind=source_kind)
+        if not root.exists():
+            return []
+        out: list[dict[str, Any]] = []
+        root_manifest = root / "manifest.json"
+        if root_manifest.exists():
+            out.extend(self.read_batch(exchange=exchange, market=market, symbol=symbol, source_transport=source_transport, source_kind=source_kind))
+        for path in sorted(root.glob("partition=*/manifest.json")):
+            partition = path.parent.name.removeprefix("partition=")
+            out.extend(self.read_batch(exchange=exchange, market=market, symbol=symbol, source_transport=source_transport, source_kind=source_kind, partition=partition))
+        return out
 
     def inspect(self) -> list[RawManifest]:
         out: list[RawManifest] = []

@@ -6,12 +6,17 @@ from marketdata_provider.contracts.events import LiveKlineEvent
 from marketdata_provider.contracts.instrument import InstrumentKey
 from marketdata_provider.contracts.query import BarQuery
 from marketdata_provider.contracts.series import BarSeries, CoverageReport, StoreResult
+from marketdata_provider.contracts.footprint import FootprintQuery, FootprintSeries
 from marketdata_provider.contracts.timeframe import Timeframe
 
 
 @runtime_checkable
 class MarketDataProvider(Protocol):
     def fetch_bars(self, query: BarQuery) -> BarSeries: ...
+
+
+class FootprintProvider(Protocol):
+    def fetch_footprint(self, query: FootprintQuery) -> FootprintSeries: ...
 
 
 @runtime_checkable

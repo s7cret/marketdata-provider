@@ -14,13 +14,16 @@ from marketdata_provider.contracts.instrument import InstrumentKey
 from marketdata_provider.contracts.protocols import CandleStore as CandleStoreProtocol
 from marketdata_provider.contracts.protocols import LiveKlineClient as LiveKlineClientProtocol
 from marketdata_provider.contracts.protocols import MarketDataProvider as MarketDataProviderProtocol
+from marketdata_provider.contracts.protocols import FootprintProvider as FootprintProviderProtocol
 from marketdata_provider.contracts.query import BarQuery
+from marketdata_provider.contracts.footprint import FootprintQuery, FootprintSeries
 from marketdata_provider.contracts.series import BarSeries, CoverageReport, StoreResult
 from marketdata_provider.contracts.timeframe import Timeframe, parse_timeframe
 from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.errors import MDUnsupportedFeature
 from marketdata_provider.providers.offline import OfflineDataProvider
 from marketdata_provider.service import MarketDataService
+from marketdata_provider.footprint.service import FootprintService
 from marketdata_provider.store.candle_store import CandleStore as SegmentCandleStore
 
 
@@ -30,6 +33,12 @@ def create_provider(config: MarketDataConfig) -> MarketDataProviderProtocol:
     if config.offline.root is not None:
         return _OfflineProviderAdapter(config.offline.root)
     return _ExchangeProviderAdapter(config)
+
+
+def create_footprint_provider(config: MarketDataConfig) -> FootprintProviderProtocol:
+    """Create the raw-trade footprint provider."""
+
+    return _FootprintProviderAdapter(config)
 
 
 def create_candle_store(config: MarketDataConfig) -> CandleStoreProtocol:
@@ -87,6 +96,14 @@ class _OfflineProviderAdapter:
             query.end_ms,
         )
         return series_from_core_bars(query, bars, source="provider")
+
+
+class _FootprintProviderAdapter:
+    def __init__(self, config: MarketDataConfig):
+        self.service = FootprintService(config)
+
+    def fetch_footprint(self, query: FootprintQuery) -> FootprintSeries:
+        return self.service.fetch_footprint(query)
 
 
 class _CandleStoreAdapter:
