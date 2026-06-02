@@ -70,6 +70,9 @@ def fetch_binance_archive_bars(
     bars = _dedupe_sorted(bars)
     if _range_coverage_complete(bars, start=start, end=end, duration=duration):
         return bars
+    months = _months_for_intervals(intervals)
+    if bars and len(months) > MAX_MONTHLY_ARCHIVE_MONTHS:
+        return bars
 
     daily_bars: list[Bar] = []
     for year, month, day in _days_for_intervals(intervals):
