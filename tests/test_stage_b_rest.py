@@ -252,6 +252,31 @@ def test_marketdata_service_materializes_15m_from_warm_1m_cache_without_source_f
     _assert_derived_15m_from_1m(service.store)
 
 
+def test_marketdata_service_streams_base_cache_for_derived_materialization(tmp_path, monkeypatch):
+    store = CandleStore(tmp_path)
+    store.segments.replace_all(
+        _one_minute_bars(),
+        exchange="binance",
+        market="spot",
+        symbol="BTCUSDT",
+        timeframe="1m",
+    )
+
+    def fail_read_all(_self, *args, **kwargs):
+        if kwargs.get("timeframe") == "1m":
+            raise AssertionError("base cache should stream instead of read_all")
+        return original_read_all(*args, **kwargs)
+
+    original_read_all = store.segments.read_all
+    monkeypatch.setattr("marketdata_provider.store.segment_store.SegmentStore.read_all", fail_read_all)
+    monkeypatch.setattr(MarketDataService, "_fetch_from_sources", lambda self, query: (_ for _ in ()).throw(AssertionError("source fetch should not run")))
+
+    service = MarketDataService(MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path)))
+    series = service.fetch_bars(_query("15m"))
+
+    assert [bar.time for bar in series.bars] == [0, 900_000]
+
+
 def test_candle_store_write_is_idempotent_across_provider_provenance(tmp_path):
     query = BarQuery(
         instrument=InstrumentKey("binance", "spot", "BTCUSDT"),

@@ -8,7 +8,8 @@ from dataclasses import asdict
 from pathlib import Path
 
 from marketdata_provider.cache.local import read_cache_segment, write_cache_segment
-from marketdata_provider.config import BinanceConfig, BybitConfig
+from marketdata_provider.config import BinanceConfig, BybitConfig, MarketDataConfig, StorageConfig
+from marketdata_provider.contracts import BarQuery, InstrumentKey, parse_timeframe
 from marketdata_provider.errors import MDNetworkUnavailable, MDUnsupportedFeature, MarketDataError
 from marketdata_provider.store import CandleStore, RawStore, SegmentStore
 from marketdata_provider.store.repair import audit_against_source, load_repair_source, read_repair_logs, repair_from_source, repair_log_path
@@ -16,6 +17,7 @@ from marketdata_provider.streaming import KlineUpdate, MockWebSocketSupervisor, 
 from marketdata_provider.exchanges.binance.provider import binance_get_bars_sync
 from marketdata_provider.exchanges.bybit.provider import bybit_get_bars_sync
 from marketdata_provider.providers import OfflineDataProvider
+from marketdata_provider.service import MarketDataService
 from marketdata_provider.symbols import normalize_symbol
 from marketdata_provider.validation import validate_bars
 
@@ -181,6 +183,27 @@ def _cmd_compact(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_precompute(args: argparse.Namespace) -> int:
+    ns = _store_ns(args)
+    if args.start is None or args.end is None:
+        raise MDUnsupportedFeature("precompute requires --start and --end")
+    query = BarQuery(
+        instrument=InstrumentKey(ns.exchange, ns.market, ns.exchange_symbol),
+        timeframe=parse_timeframe(args.timeframe),
+        start_ms=args.start,
+        end_ms=args.end,
+        gap_policy="fail",
+    )
+    cfg = MarketDataConfig(storage=StorageConfig(cache_dir=args.store_dir))
+    result = MarketDataService(cfg).materialize_bars(query)
+    _json({
+        **result,
+        "store_dir": str(args.store_dir),
+        "timeframe": query.timeframe.canonical,
+    })
+    return 0
+
+
 def _cmd_live_ws_once(args: argparse.Namespace) -> int:
     # Explicit real client construction path for env-gated smoke/integration use.
     ns = _store_ns(args)
@@ -233,6 +256,8 @@ def build_parser() -> argparse.ArgumentParser:
     vac.add_argument("--store-dir", type=Path, default=Path(".marketdata-store")); vac.set_defaults(func=_cmd_vacuum)
     comp = sub.add_parser("compact", help="rewrite a segment in csv/parquet format with identical manifest/checksum semantics")
     comp.add_argument("--store-dir", type=Path, default=Path(".marketdata-store")); comp.add_argument("--symbol", required=True); comp.add_argument("--timeframe", required=True); comp.add_argument("--exchange"); comp.add_argument("--market"); comp.add_argument("--format", choices=["csv", "parquet"], default="csv"); comp.set_defaults(func=_cmd_compact)
+    pre = sub.add_parser("precompute", help="materialize canonical provider bars/derived timeframe cache")
+    pre.add_argument("--store-dir", type=Path, default=Path(".marketdata-cache")); pre.add_argument("--symbol", required=True); pre.add_argument("--timeframe", required=True); pre.add_argument("--start", type=int, required=True); pre.add_argument("--end", type=int, required=True); pre.add_argument("--exchange"); pre.add_argument("--market"); pre.set_defaults(func=_cmd_precompute)
     wi = sub.add_parser("ws-info", help="construct real env-gated public WebSocket endpoint diagnostics without connecting")
     wi.add_argument("--symbol", required=True); wi.add_argument("--timeframe", required=True); wi.add_argument("--exchange"); wi.add_argument("--market"); wi.set_defaults(func=_cmd_live_ws_once)
     return p

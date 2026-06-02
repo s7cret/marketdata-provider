@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime, timezone
-from typing import Protocol
+from typing import Iterable, Protocol
 
 from marketdata_provider._adapters import series_from_market_bars
 from marketdata_provider.config import MarketDataConfig
@@ -106,8 +106,7 @@ class MarketDataService:
         if not base_changed and _coverage_complete(derived, query):
             return series_from_market_bars(query, derived, source="storage")
 
-        bars = self._stored_bars(base_query)
-        derived = _aggregate_market_bars(bars, query=query)
+        derived = self._aggregate_stored_base(base_query, query)
         if derived:
             existing = self.store.get_market_bars(
                 exchange=query.instrument.exchange,
@@ -128,6 +127,48 @@ class MarketDataService:
             derived = self._stored_bars(query)
             return series_from_market_bars(query, derived, source="storage")
         return series_from_market_bars(query, derived, source="storage")
+
+    def precompute_bars(self, query: BarQuery) -> BarSeries:
+        """Materialize derived bars before a batch run."""
+
+        return self.fetch_bars(query)
+
+    def materialize_bars(self, query: BarQuery) -> dict[str, object]:
+        """Ensure requested bars exist without returning the full series."""
+
+        base_query = self._base_query(query)
+        if base_query.timeframe == query.timeframe:
+            changed = self._ensure_stored(base_query)
+            return {
+                "ok": self._stored_coverage_complete(query),
+                "span_ok": self._stored_span_complete(query),
+                "changed": changed,
+                "bars_returned": 0,
+            }
+        base_changed = self._ensure_stored(base_query)
+        if not base_changed and self._stored_span_complete(query):
+            return {
+                "ok": self._stored_coverage_complete(query),
+                "span_ok": True,
+                "changed": False,
+                "bars_returned": 0,
+            }
+        derived = self._aggregate_stored_base(base_query, query)
+        if derived:
+            self.store.segments.replace_all(
+                derived,
+                exchange=query.instrument.exchange,
+                market=query.instrument.market,
+                symbol=query.instrument.symbol,
+                timeframe=query.timeframe.canonical,
+            )
+        return {
+            "ok": self._stored_coverage_complete(query),
+            "span_ok": self._stored_span_complete(query),
+            "changed": bool(derived),
+            "bars_returned": 0,
+            "rows_written": len(derived),
+        }
 
     def _base_query(self, query: BarQuery) -> BarQuery:
         if not self.config.history.enabled:
@@ -150,6 +191,24 @@ class MarketDataService:
         )
 
     def _ensure_stored(self, query: BarQuery) -> bool:
+        if self._stored_coverage_complete(query):
+            return False
+        manifest = self.store.segments.manifest_for(
+            exchange=query.instrument.exchange,
+            market=query.instrument.market,
+            symbol=query.instrument.symbol,
+            timeframe=query.timeframe.canonical,
+        )
+        duration = query.timeframe.duration_ms
+        if self._manifest_spans(manifest, query, duration):
+            return False
+        if manifest is not None and manifest.end_time is not None and duration is not None:
+            missing_start = max(query.start_ms, manifest.end_time + duration)
+            if missing_start < query.end_ms:
+                fetched_tail = self._fetch_from_sources(replace(query, start_ms=missing_start))
+                if fetched_tail:
+                    self._append_stream(query, fetched_tail)
+                    return True
         current = self._stored_bars(query)
         if _coverage_complete(current, query):
             return False
@@ -167,6 +226,81 @@ class MarketDataService:
             timeframe=query.timeframe.canonical,
         )
         return True
+
+    def _append_stream(self, query: BarQuery, fetched_tail: list[MarketBar]) -> None:
+        by_time = {bar.time: bar for bar in fetched_tail}
+
+        def merged() -> Iterable[MarketBar]:
+            yielded: set[int] = set()
+            for bar in self.store.segments.iter_all(
+                exchange=query.instrument.exchange,
+                market=query.instrument.market,
+                symbol=query.instrument.symbol,
+                timeframe=query.timeframe.canonical,
+            ):
+                replacement = by_time.get(bar.time)
+                yield replacement or bar
+                yielded.add(bar.time)
+            for time in sorted(set(by_time) - yielded):
+                yield by_time[time]
+
+        self.store.segments.replace_all_stream(
+            merged(),
+            exchange=query.instrument.exchange,
+            market=query.instrument.market,
+            symbol=query.instrument.symbol,
+            timeframe=query.timeframe.canonical,
+        )
+
+    def _stored_span_complete(self, query: BarQuery) -> bool:
+        manifest = self.store.segments.manifest_for(
+            exchange=query.instrument.exchange,
+            market=query.instrument.market,
+            symbol=query.instrument.symbol,
+            timeframe=query.timeframe.canonical,
+        )
+        return self._manifest_spans(manifest, query, query.timeframe.duration_ms)
+
+    def _stored_coverage_complete(self, query: BarQuery) -> bool:
+        duration = query.timeframe.duration_ms
+        if duration is None:
+            return False
+        manifest = self.store.segments.manifest_for(
+            exchange=query.instrument.exchange,
+            market=query.instrument.market,
+            symbol=query.instrument.symbol,
+            timeframe=query.timeframe.canonical,
+        )
+        if manifest is None or manifest.start_time is None or manifest.end_time is None:
+            return False
+        expected = ((query.end_ms - query.start_ms) + duration - 1) // duration
+        return (
+            manifest.start_time <= query.start_ms
+            and manifest.end_time >= query.end_ms - duration
+            and manifest.rows_count >= expected
+        )
+
+    @staticmethod
+    def _manifest_spans(manifest: object, query: BarQuery, duration: int | None) -> bool:
+        return (
+            duration is not None
+            and manifest is not None
+            and getattr(manifest, "start_time", None) is not None
+            and getattr(manifest, "end_time", None) is not None
+            and manifest.start_time <= query.start_ms
+            and manifest.end_time >= query.end_ms - duration
+        )
+
+    def _aggregate_stored_base(self, base_query: BarQuery, query: BarQuery) -> list[MarketBar]:
+        base_bars = self.store.segments.iter_all(
+            exchange=base_query.instrument.exchange,
+            market=base_query.instrument.market,
+            symbol=base_query.instrument.symbol,
+            timeframe=base_query.timeframe.canonical,
+            start=query.start_ms,
+            end=query.end_ms,
+        )
+        return _aggregate_market_bars(base_bars, query=query)
 
     def _fetch_from_sources(self, query: BarQuery) -> list[MarketBar]:
         if query.instrument.exchange == "binance":
@@ -253,36 +387,45 @@ def _merge_bars(*groups: list[MarketBar]) -> list[MarketBar]:
     return [by_time[t] for t in sorted(by_time)]
 
 
-def _aggregate_market_bars(bars: list[MarketBar], *, query: BarQuery) -> list[MarketBar]:
+def _aggregate_market_bars(bars: Iterable[MarketBar], *, query: BarQuery) -> list[MarketBar]:
     duration = query.timeframe.duration_ms
     if duration is None:
         raise MDUnsupportedFeature(f"Aggregation unsupported for timeframe: {query.timeframe.canonical}")
-    buckets: dict[int, list[MarketBar]] = {}
+    out: list[MarketBar] = []
+    current_bucket_time: int | None = None
+    current_bucket: list[MarketBar] = []
     for bar in bars:
         bucket_time = (bar.time // duration) * duration
-        if query.start_ms <= bucket_time < query.end_ms:
-            buckets.setdefault(bucket_time, []).append(bar)
-    out: list[MarketBar] = []
-    for bucket_time in sorted(buckets):
-        bucket = sorted(buckets[bucket_time], key=lambda item: item.time)
-        traded = [bar for bar in bucket if bar.volume > 0]
-        price_bucket = traded or bucket
-        out.append(
-            MarketBar(
-                time=bucket_time,
-                open=price_bucket[0].open,
-                high=max(bar.high for bar in bucket),
-                low=min(bar.low for bar in bucket),
-                close=price_bucket[-1].close,
-                volume=sum(bar.volume for bar in bucket),
-                time_close=close_time_ms(bucket_time, query.timeframe.canonical),
-                exchange=query.instrument.exchange,
-                market=query.instrument.market,
-                symbol=query.instrument.symbol,
-                timeframe=query.timeframe.canonical,
-                source_transport="derived",
-                source_kind="trade_kline",
-                is_closed=True,
-            )
-        )
+        if not (query.start_ms <= bucket_time < query.end_ms):
+            continue
+        if current_bucket_time is None:
+            current_bucket_time = bucket_time
+        if bucket_time != current_bucket_time:
+            out.append(_aggregate_bucket(current_bucket_time, current_bucket, query=query))
+            current_bucket_time = bucket_time
+            current_bucket = []
+        current_bucket.append(bar)
+    if current_bucket_time is not None and current_bucket:
+        out.append(_aggregate_bucket(current_bucket_time, current_bucket, query=query))
     return out
+
+
+def _aggregate_bucket(bucket_time: int, bucket: list[MarketBar], *, query: BarQuery) -> MarketBar:
+    traded = [bar for bar in bucket if bar.volume > 0]
+    price_bucket = traded or bucket
+    return MarketBar(
+        time=bucket_time,
+        open=price_bucket[0].open,
+        high=max(bar.high for bar in bucket),
+        low=min(bar.low for bar in bucket),
+        close=price_bucket[-1].close,
+        volume=sum(bar.volume for bar in bucket),
+        time_close=close_time_ms(bucket_time, query.timeframe.canonical),
+        exchange=query.instrument.exchange,
+        market=query.instrument.market,
+        symbol=query.instrument.symbol,
+        timeframe=query.timeframe.canonical,
+        source_transport="derived",
+        source_kind="trade_kline",
+        is_closed=True,
+    )

@@ -10,7 +10,7 @@ import tempfile
 from dataclasses import asdict, dataclass
 from decimal import Decimal
 from pathlib import Path
-from typing import Iterable, Literal
+from typing import Iterable, Iterator, Literal
 
 from marketdata_provider.core.bar import MarketBar, RUNTIME_CONTRACT_VERSION
 from marketdata_provider.errors import MDInvalidExchangeResponse, MDUnsupportedFeature
@@ -40,28 +40,32 @@ def market_bar_checksum(bar: MarketBar) -> str:
 def bars_checksum(bars: Iterable[MarketBar]) -> str:
     h = hashlib.sha256()
     for b in sorted(bars, key=lambda x: x.time):
-        row = {
-            "close": _canon_number(b.close),
-            "exchange": b.exchange.lower(),
-            "high": _canon_number(b.high),
-            "is_closed": bool(b.is_closed),
-            "low": _canon_number(b.low),
-            "market": b.market.lower(),
-            "open": _canon_number(b.open),
-            "quote_volume": _canon_number(b.quote_volume),
-            "source_kind": b.source_kind,
-            "source_transport": b.source_transport,
-            "symbol": b.symbol.upper(),
-            "time": int(b.time),
-            "time_close": int(b.time_close) if b.time_close is not None else None,
-            "timeframe": canonical_timeframe(b.timeframe),
-            "trades_count": int(b.trades_count) if b.trades_count is not None else None,
-            "turnover": _canon_number(b.turnover),
-            "volume": _canon_number(b.volume),
-        }
-        h.update(json.dumps(row, sort_keys=True, separators=(",", ":")).encode())
-        h.update(b"\n")
+        _update_checksum(h, b)
     return h.hexdigest()
+
+
+def _update_checksum(h: "hashlib._Hash", b: MarketBar) -> None:
+    row = {
+        "close": _canon_number(b.close),
+        "exchange": b.exchange.lower(),
+        "high": _canon_number(b.high),
+        "is_closed": bool(b.is_closed),
+        "low": _canon_number(b.low),
+        "market": b.market.lower(),
+        "open": _canon_number(b.open),
+        "quote_volume": _canon_number(b.quote_volume),
+        "source_kind": b.source_kind,
+        "source_transport": b.source_transport,
+        "symbol": b.symbol.upper(),
+        "time": int(b.time),
+        "time_close": int(b.time_close) if b.time_close is not None else None,
+        "timeframe": canonical_timeframe(b.timeframe),
+        "trades_count": int(b.trades_count) if b.trades_count is not None else None,
+        "turnover": _canon_number(b.turnover),
+        "volume": _canon_number(b.volume),
+    }
+    h.update(json.dumps(row, sort_keys=True, separators=(",", ":")).encode())
+    h.update(b"\n")
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +155,34 @@ class SegmentStore:
                 raise MDInvalidExchangeResponse("Segment checksum mismatch", details={"expected": manifest.get("checksum"), "actual": actual})
         return [b for b in bars if (start is None or b.time >= start) and (end is None or b.time < end)]
 
+    def iter_all(self, *, exchange: str, market: str, symbol: str, timeframe: str, source_kind: str = "trade_kline", start: int | None = None, end: int | None = None) -> Iterator[MarketBar]:
+        manifest_path = self._dir(exchange=exchange, market=market, symbol=symbol, timeframe=timeframe, source_kind=source_kind) / "manifest.json"
+        fmt = self.data_format
+        if manifest_path.exists():
+            manifest = json.loads(manifest_path.read_text())
+            fmt = manifest.get("data_format", fmt)
+        data_path, _ = self._paths(exchange=exchange, market=market, symbol=symbol, timeframe=timeframe, source_kind=source_kind, data_format=fmt)
+        if not data_path.exists():
+            return
+        if fmt == "parquet":
+            for bar in self.read_all(exchange=exchange, market=market, symbol=symbol, timeframe=timeframe, source_kind=source_kind, start=start, end=end):
+                yield bar
+            return
+        with data_path.open(newline="") as fh:
+            for row in csv.DictReader(fh):
+                bar = self._row_to_bar(row)
+                if start is not None and bar.time < start:
+                    continue
+                if end is not None and bar.time >= end:
+                    break
+                yield bar
+
+    def manifest_for(self, *, exchange: str, market: str, symbol: str, timeframe: str, source_kind: str = "trade_kline") -> SegmentManifest | None:
+        manifest_path = self._dir(exchange=exchange, market=market, symbol=symbol, timeframe=timeframe, source_kind=source_kind) / "manifest.json"
+        if not manifest_path.exists():
+            return None
+        return SegmentManifest(**json.loads(manifest_path.read_text()))
+
     def get(self, key: tuple[str, str, str, str, str, int]) -> MarketBar | None:
         exchange, market, symbol, timeframe, source_kind, open_time = key
         for b in self.read_all(exchange=exchange, market=market, symbol=symbol, timeframe=timeframe, source_kind=source_kind, start=open_time, end=open_time + 1):
@@ -190,6 +222,58 @@ class SegmentStore:
                     "INSERT OR REPLACE INTO marketdata_segments(exchange,market,symbol,timeframe,start_time,end_time,rows_count,source_transport,source_kind,checksum,downloaded_at,data_format) "
                     "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                     (manifest.exchange, manifest.market, manifest.symbol, manifest.timeframe, manifest.start_time, manifest.end_time, manifest.rows_count, manifest.source_transport, manifest.source_kind, manifest.checksum, max((b.downloaded_at or 0) for b in bars), fmt),
+                )
+        return manifest
+
+    def replace_all_stream(self, bars: Iterable[MarketBar], *, exchange: str, market: str, symbol: str, timeframe: str, source_kind: str = "trade_kline") -> SegmentManifest:
+        data_path, manifest_path = self._paths(exchange=exchange, market=market, symbol=symbol, timeframe=timeframe, source_kind=source_kind, data_format="csv")
+        data_path.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=f".{data_path.name}.", dir=str(data_path.parent))
+        digest = hashlib.sha256()
+        rows_count = 0
+        first: MarketBar | None = None
+        last: MarketBar | None = None
+        downloaded_at = 0
+        previous_time: int | None = None
+        try:
+            with os.fdopen(fd, "w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=self.fields)
+                writer.writeheader()
+                for bar in bars:
+                    if previous_time is not None and bar.time <= previous_time:
+                        raise MDInvalidExchangeResponse("Segment stream must be strictly ordered by time")
+                    previous_time = bar.time
+                    validate_bars([bar.to_bar()])
+                    writer.writerow({name: getattr(bar, name) for name in self.fields})
+                    _update_checksum(digest, bar)
+                    rows_count += 1
+                    first = first or bar
+                    last = bar
+                    downloaded_at = max(downloaded_at, bar.downloaded_at or 0)
+                f.flush(); os.fsync(f.fileno())
+            os.replace(tmp, data_path)
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+        other = data_path.with_suffix(".parquet")
+        if other.exists():
+            other.unlink()
+        manifest = SegmentManifest(
+            runtime_contract_version=RUNTIME_CONTRACT_VERSION,
+            schema_version="stage-d-csv-1",
+            exchange=exchange.lower(), market=market.lower(), symbol=symbol.upper(), timeframe=canonical_timeframe(timeframe),
+            source_transport=first.source_transport if first else "ws", source_kind=source_kind,
+            rows_count=rows_count, start_time=first.time if first else None, end_time=last.time if last else None,
+            checksum=digest.hexdigest(), data_format="csv",
+        )
+        self._atomic_write_text(manifest_path, json.dumps(asdict(manifest), sort_keys=True, indent=2) + "\n")
+        with sqlite3.connect(self.index_path) as db:
+            db.execute("PRAGMA journal_mode=WAL")
+            if rows_count:
+                db.execute(
+                    "INSERT OR REPLACE INTO marketdata_segments(exchange,market,symbol,timeframe,start_time,end_time,rows_count,source_transport,source_kind,checksum,downloaded_at,data_format) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (manifest.exchange, manifest.market, manifest.symbol, manifest.timeframe, manifest.start_time, manifest.end_time, manifest.rows_count, manifest.source_transport, manifest.source_kind, manifest.checksum, downloaded_at, "csv"),
                 )
         return manifest
 
