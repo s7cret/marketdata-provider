@@ -1,0 +1,10 @@
+services:
+  marketdata-provider:
+    build:
+      context: .
+    command: python -m pytest
+    volumes:
+      - marketdata-cache:/app/.marketdata-cache
+
+volumes:
+  marketdata-cache:
