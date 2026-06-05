@@ -66,10 +66,6 @@ python -m ruff check .
 python -m mypy marketdata_provider
 ```
 
-## GitHub Publication
-
-See `docs/GITHUB_PUBLICATION.md`.
-
 ## License
 
 MIT. See `LICENSE`.

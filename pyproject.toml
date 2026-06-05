@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "marketdata-provider"
 version = "2.18.0"
-description = "Market Data Provider Stage A: Binance + Bybit normalized OHLCV foundation"
+description = "Market data provider for normalized exchange OHLCV and cache workflows"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["httpx>=0.25"]
