@@ -52,6 +52,15 @@ class CandleStore:
     def get_market_bars(self, *, exchange: str, market: str, symbol: str, timeframe: str, start: int | None = None, end: int | None = None, source_kind: str = "trade_kline") -> list[MarketBar]:
         return self.segments.read_all(exchange=exchange, market=market, symbol=symbol, timeframe=timeframe, source_kind=source_kind, start=start, end=end)
 
+    def latest_bar_time(self, *, exchange: str, market: str, symbol: str, timeframe: str, source_kind: str = "trade_kline") -> int | None:
+        return self.segments.latest_bar_time(
+            exchange=exchange,
+            market=market,
+            symbol=symbol,
+            timeframe=timeframe,
+            source_kind=source_kind,
+        )
+
     def get_current_candle(self, *, exchange: str, market: str, symbol: str, timeframe: str, source_kind: str = "trade_kline") -> Bar | None:
         b = self.current.get_current(exchange=exchange, market=market, symbol=symbol, timeframe=timeframe, source_kind=source_kind)
         return b.to_bar() if b else None

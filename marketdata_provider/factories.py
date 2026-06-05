@@ -148,6 +148,17 @@ class _CandleStoreAdapter:
     def coverage(self, query: BarQuery) -> CoverageReport:
         return self.read(query).coverage
 
+    def latest_bar_time(self, query: BarQuery) -> int | None:
+        if hasattr(self.store, "latest_bar_time"):
+            return self.store.latest_bar_time(
+                exchange=query.instrument.exchange,
+                market=query.instrument.market,
+                symbol=query.instrument.symbol,
+                timeframe=query.timeframe.canonical,
+            )
+        coverage = self.coverage(query)
+        return coverage.delivered_end_ms
+
     def _bulk_write_closed(self, bars: list[MarketBar]) -> int:
         first = bars[0]
         existing = self.store.segments.read_all(

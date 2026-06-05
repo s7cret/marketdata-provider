@@ -10,7 +10,6 @@ from typing import Literal
 from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.providers import OfflineDataProvider
 from marketdata_provider.store.candle_store import CandleStore
-from marketdata_provider.store.segment_store import market_bar_checksum
 from marketdata_provider.timeframes import canonical_timeframe, close_time_ms
 
 RepairPolicy = Literal["strict", "non-strict"]

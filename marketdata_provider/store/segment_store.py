@@ -180,6 +180,16 @@ class SegmentStore:
             return None
         return SegmentManifest(**json.loads(manifest_path.read_text()))
 
+    def latest_bar_time(self, *, exchange: str, market: str, symbol: str, timeframe: str, source_kind: str = "trade_kline") -> int | None:
+        manifest = self.manifest_for(
+            exchange=exchange,
+            market=market,
+            symbol=symbol,
+            timeframe=timeframe,
+            source_kind=source_kind,
+        )
+        return None if manifest is None else manifest.end_time
+
     def get(self, key: tuple[str, str, str, str, str, int]) -> MarketBar | None:
         exchange, market, symbol, timeframe, source_kind, open_time = key
         for b in self.read_all(exchange=exchange, market=market, symbol=symbol, timeframe=timeframe, source_kind=source_kind, start=open_time, end=open_time + 1):
@@ -402,7 +412,19 @@ class SegmentStore:
             f.write(content); f.flush(); os.fsync(f.fileno())
         os.replace(tmp, path)
 
-    def _row_to_bar(self, r: dict[str, str]) -> MarketBar:
+    @staticmethod
+    def _parse_bool(value: object, *, default: bool = True) -> bool:
+        if value is None or value == "":
+            return default
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            return value.strip().lower() in {"true", "1", "1.0", "yes", "y"}
+        return bool(value)
+
+    def _row_to_bar(self, r: dict[str, object]) -> MarketBar:
         def opt_float(name: str) -> float | None:
             return float(r[name]) if r.get(name) not in (None, "") else None
         def opt_int(name: str) -> int | None:
@@ -411,5 +433,5 @@ class SegmentStore:
             time=int(r["time"]), open=float(r["open"]), high=float(r["high"]), low=float(r["low"]), close=float(r["close"]), volume=float(r["volume"]), time_close=opt_int("time_close"),
             exchange=r.get("exchange", "").lower(), market=r.get("market", "").lower(), symbol=r.get("symbol", "").upper(), timeframe=canonical_timeframe(r.get("timeframe", "1m")),
             quote_volume=opt_float("quote_volume"), turnover=opt_float("turnover"), trades_count=opt_int("trades_count"), taker_buy_base_volume=opt_float("taker_buy_base_volume"), taker_buy_quote_volume=opt_float("taker_buy_quote_volume"),
-            source_transport=r.get("source_transport") or "ws", source_kind=r.get("source_kind") or "trade_kline", is_closed=(r.get("is_closed", "True") in {"True", "true", "1", "1.0", "True"}), downloaded_at=opt_int("downloaded_at"),
+            source_transport=r.get("source_transport") or "ws", source_kind=r.get("source_kind") or "trade_kline", is_closed=self._parse_bool(r.get("is_closed"), default=True), downloaded_at=opt_int("downloaded_at"),
         )

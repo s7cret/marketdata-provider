@@ -87,7 +87,7 @@ def _cmd_export(args: argparse.Namespace) -> int:
 def _cmd_coverage(args: argparse.Namespace) -> int:
     bars = _bars_from_source(args)
     gaps = 0
-    for prev, cur in zip(bars, bars[1:]):
+    for prev, cur in zip(bars, bars[1:], strict=False):
         if prev.time_close is not None and cur.time != prev.time_close + 1:
             gaps += 1
     _json({"ok": True, "bars": len(bars), "first": bars[0].time if bars else None, "last": bars[-1].time if bars else None, "gaps": gaps})

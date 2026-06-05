@@ -50,6 +50,38 @@ def test_bounded_csv_segment_read_streams_without_full_load(tmp_path: Path, monk
     assert [b.time for b in bars] == [60_000]
 
 
+def test_segment_store_parses_typed_bool_and_exposes_latest_time(tmp_path: Path):
+    store = SegmentStore(tmp_path)
+    row = {
+        "time": 0,
+        "open": 1,
+        "high": 2,
+        "low": 0.5,
+        "close": 1.5,
+        "volume": 10,
+        "is_closed": True,
+    }
+
+    assert store._row_to_bar(row).is_closed is True
+
+    store.replace_all(
+        [mb(0), mb(60_000, close=1.6)],
+        exchange="binance",
+        market="spot",
+        symbol="BTCUSDT",
+        timeframe="1m",
+    )
+    assert (
+        store.latest_bar_time(
+            exchange="binance",
+            market="spot",
+            symbol="BTCUSDT",
+            timeframe="1m",
+        )
+        == 60_000
+    )
+
+
 def test_raw_store_plain_ndjson_manifest_checksum(tmp_path: Path):
     store = RawStore(tmp_path)
     manifest = store.write_batch([{"b": 2, "a": 1}], exchange="binance", market="spot", symbol="BTCUSDT", source_transport="ws")
