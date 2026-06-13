@@ -3,6 +3,7 @@ from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 from marketdata_provider.core.bar import Bar
 
+
 @runtime_checkable
 class DataProvider(Protocol):
     """Canonical market data provider protocol.
@@ -22,9 +23,17 @@ class DataProvider(Protocol):
         max_bars: int | None = None,
     ) -> Sequence[Bar]: ...
 
+
 @runtime_checkable
 class IntrabarDataProvider(Protocol):
-    def get_intrabar_bars(self, symbol: str, chart_bar: Bar, lower_timeframe: str | None = None, *, max_bars: int | None = None) -> Sequence[Bar]: ...
+    def get_intrabar_bars(
+        self,
+        symbol: str,
+        chart_bar: Bar,
+        lower_timeframe: str | None = None,
+        *,
+        max_bars: int | None = None,
+    ) -> Sequence[Bar]: ...
 
 
 @runtime_checkable

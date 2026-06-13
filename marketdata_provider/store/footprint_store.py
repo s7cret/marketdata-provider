@@ -8,8 +8,17 @@ import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from marketdata_provider.contracts.footprint import FootprintBar, FootprintLevel, FootprintQuery, FootprintSeries
-from marketdata_provider.contracts.series import CoverageReport, StoreResult
+from marketdata_provider.contracts.footprint import (
+    FootprintBar,
+    FootprintLevel,
+    FootprintQuery,
+    FootprintSeries,
+)
+from marketdata_provider.contracts.series import (
+    CoverageReport,
+    CoverageStatus,
+    StoreResult,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,7 +37,17 @@ class FootprintSegmentManifest:
 
 
 class FootprintStore:
-    fields = ["time", "time_close", "price_low", "price_high", "buy_volume", "sell_volume", "buy_count", "sell_count", "trades_count"]
+    fields = [
+        "time",
+        "time_close",
+        "price_low",
+        "price_high",
+        "buy_volume",
+        "sell_volume",
+        "buy_count",
+        "sell_count",
+        "trades_count",
+    ]
 
     def __init__(self, root: str | Path):
         self.root = Path(root)
@@ -57,7 +76,15 @@ class FootprintStore:
                         sell_count=int(row["sell_count"]),
                     )
                 )
-        bars = tuple(FootprintBar(time, closes[time], tuple(sorted(levels, key=lambda item: item.price_low)), trades_count[time]) for time, levels in sorted(by_time.items()))
+        bars = tuple(
+            FootprintBar(
+                time,
+                closes[time],
+                tuple(sorted(levels, key=lambda item: item.price_low)),
+                trades_count[time],
+            )
+            for time, levels in sorted(by_time.items())
+        )
         return FootprintSeries(query, bars, _coverage_for(query, bars))
 
     def write(self, series: FootprintSeries) -> StoreResult:
@@ -82,7 +109,10 @@ class FootprintStore:
             rows_count=sum(len(bar.levels) for bar in bars),
             checksum=checksum,
         )
-        self._atomic_write_text(path.parent / "manifest.json", json.dumps(asdict(manifest), sort_keys=True, indent=2) + "\n")
+        self._atomic_write_text(
+            path.parent / "manifest.json",
+            json.dumps(asdict(manifest), sort_keys=True, indent=2) + "\n",
+        )
         return StoreResult(success=True, rows_written=len(series.bars))
 
     def coverage(self, query: FootprintQuery) -> CoverageReport:
@@ -109,7 +139,62 @@ class FootprintStore:
             writer.writeheader()
             for bar in bars:
                 for level in bar.levels:
-                    writer.writerow({
+                    writer.writerow(
+                        {
+                            "time": bar.time,
+                            "time_close": bar.time_close,
+                            "price_low": level.price_low,
+                            "price_high": level.price_high,
+                            "buy_volume": level.buy_volume,
+                            "sell_volume": level.sell_volume,
+                            "buy_count": level.buy_count,
+                            "sell_count": level.sell_count,
+                            "trades_count": bar.trades_count,
+                        }
+                    )
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+
+    def _atomic_write_text(self, path: Path, content: str) -> None:
+        fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
+        with os.fdopen(fd, "w") as fh:
+            fh.write(content)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+
+
+def _coverage_for(
+    query: FootprintQuery, bars: tuple[FootprintBar, ...]
+) -> CoverageReport:
+    duration = int(query.timeframe.duration_ms or 0)
+    delivered = {bar.time for bar in bars}
+    missing = tuple(
+        (start, min(start + duration, query.end_ms))
+        for start in range(query.start_ms, query.end_ms, duration)
+        if start not in delivered
+    )
+    status: CoverageStatus = "empty" if not bars else "gap" if missing else "valid"
+    return CoverageReport(
+        query.start_ms,
+        query.end_ms,
+        bars[0].time if bars else None,
+        bars[-1].time_close if bars else None,
+        missing,
+        (),
+        ("footprint",),
+        status,
+    )
+
+
+def _checksum(bars: tuple[FootprintBar, ...]) -> str:
+    digest = hashlib.sha256()
+    for bar in bars:
+        for level in bar.levels:
+            digest.update(
+                json.dumps(
+                    {
                         "time": bar.time,
                         "time_close": bar.time_close,
                         "price_low": level.price_low,
@@ -118,39 +203,10 @@ class FootprintStore:
                         "sell_volume": level.sell_volume,
                         "buy_count": level.buy_count,
                         "sell_count": level.sell_count,
-                        "trades_count": bar.trades_count,
-                    })
-            fh.flush(); os.fsync(fh.fileno())
-        os.replace(tmp, path)
-
-    def _atomic_write_text(self, path: Path, content: str) -> None:
-        fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))
-        with os.fdopen(fd, "w") as fh:
-            fh.write(content); fh.flush(); os.fsync(fh.fileno())
-        os.replace(tmp, path)
-
-
-def _coverage_for(query: FootprintQuery, bars: tuple[FootprintBar, ...]) -> CoverageReport:
-    duration = int(query.timeframe.duration_ms or 0)
-    delivered = {bar.time for bar in bars}
-    missing = tuple((start, min(start + duration, query.end_ms)) for start in range(query.start_ms, query.end_ms, duration) if start not in delivered)
-    status = "empty" if not bars else "gap" if missing else "valid"
-    return CoverageReport(query.start_ms, query.end_ms, bars[0].time if bars else None, bars[-1].time_close if bars else None, missing, (), ("footprint",), status)
-
-
-def _checksum(bars: tuple[FootprintBar, ...]) -> str:
-    digest = hashlib.sha256()
-    for bar in bars:
-        for level in bar.levels:
-            digest.update(json.dumps({
-                "time": bar.time,
-                "time_close": bar.time_close,
-                "price_low": level.price_low,
-                "price_high": level.price_high,
-                "buy_volume": level.buy_volume,
-                "sell_volume": level.sell_volume,
-                "buy_count": level.buy_count,
-                "sell_count": level.sell_count,
-            }, sort_keys=True, separators=(",", ":")).encode())
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            )
             digest.update(b"\n")
     return digest.hexdigest()

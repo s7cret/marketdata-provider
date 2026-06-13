@@ -12,19 +12,29 @@ from marketdata_provider.contracts.events import LiveKlineEvent
 from marketdata_provider.contracts.errors import CoverageValidationError
 from marketdata_provider.contracts.instrument import InstrumentKey
 from marketdata_provider.contracts.protocols import CandleStore as CandleStoreProtocol
-from marketdata_provider.contracts.protocols import LiveKlineClient as LiveKlineClientProtocol
-from marketdata_provider.contracts.protocols import MarketDataProvider as MarketDataProviderProtocol
-from marketdata_provider.contracts.protocols import FootprintProvider as FootprintProviderProtocol
+from marketdata_provider.contracts.protocols import (
+    LiveKlineClient as LiveKlineClientProtocol,
+)
+from marketdata_provider.contracts.protocols import (
+    MarketDataProvider as MarketDataProviderProtocol,
+)
+from marketdata_provider.contracts.protocols import (
+    FootprintProvider as FootprintProviderProtocol,
+)
 from marketdata_provider.contracts.query import BarQuery
 from marketdata_provider.contracts.footprint import FootprintQuery, FootprintSeries
 from marketdata_provider.contracts.series import BarSeries, CoverageReport, StoreResult
 from marketdata_provider.contracts.timeframe import Timeframe, parse_timeframe
 from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.errors import MDUnsupportedFeature
+from marketdata_provider.exchanges.registry import list_exchanges
 from marketdata_provider.providers.offline import OfflineDataProvider
 from marketdata_provider.service import MarketDataService
 from marketdata_provider.footprint.service import FootprintService
 from marketdata_provider.store.candle_store import CandleStore as SegmentCandleStore
+
+
+_NATIVE_EXCHANGE_IDS = {exchange.id for exchange in list_exchanges(native_only=True)}
 
 
 def create_provider(config: MarketDataConfig) -> MarketDataProviderProtocol:
@@ -69,7 +79,9 @@ def create_live_kline_client(
         symbol=instrument.symbol,
         timeframe=timeframe.canonical,
     )
-    return _LiveKlineClientAdapter(raw_client, instrument=instrument, timeframe=timeframe)
+    return _LiveKlineClientAdapter(
+        raw_client, instrument=instrument, timeframe=timeframe
+    )
 
 
 class _ExchangeProviderAdapter:
@@ -79,7 +91,7 @@ class _ExchangeProviderAdapter:
 
     def fetch_bars(self, query: BarQuery) -> BarSeries:
         exchange = (self.config.default_exchange or query.instrument.exchange).lower()
-        if exchange not in {"binance", "bybit"}:
+        if exchange not in _NATIVE_EXCHANGE_IDS:
             raise MDUnsupportedFeature(f"Unsupported provider exchange: {exchange}")
         return self.service.fetch_bars(query)
 
@@ -111,14 +123,16 @@ class _CandleStoreAdapter:
         self.store = store
 
     def read(self, query: BarQuery) -> BarSeries:
-        bars = tuple(self.store.get_market_bars(
-            exchange=query.instrument.exchange,
-            market=query.instrument.market,
-            symbol=query.instrument.symbol,
-            timeframe=query.timeframe.canonical,
-            start=query.start_ms,
-            end=query.end_ms,
-        ))
+        bars = tuple(
+            self.store.get_market_bars(
+                exchange=query.instrument.exchange,
+                market=query.instrument.market,
+                symbol=query.instrument.symbol,
+                timeframe=query.timeframe.canonical,
+                start=query.start_ms,
+                end=query.end_ms,
+            )
+        )
         error = _stored_bars_read_error(query, bars)
         if error is not None:
             raise CoverageValidationError(error)
@@ -279,7 +293,9 @@ class _LiveKlineClientAdapter:
         max_messages: int | None = None,
         timeout_s: float | None = None,
     ) -> AsyncIterator[LiveKlineEvent]:
-        async for event in self.raw_client.events(max_messages=max_messages, timeout_s=timeout_s):
+        async for event in self.raw_client.events(
+            max_messages=max_messages, timeout_s=timeout_s
+        ):
             update = event.update
             instrument = InstrumentKey(update.exchange, update.market, update.symbol)
             timeframe = parse_timeframe(update.timeframe)

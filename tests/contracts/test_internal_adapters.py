@@ -47,7 +47,11 @@ def test_series_from_core_bars_reports_gaps_duplicates_and_unordered() -> None:
     )
     unordered = series_from_core_bars(
         query,
-        (CoreBar(60_000, 1, 1, 1, 1), CoreBar(0, 1, 1, 1, 1), CoreBar(120_000, 1, 1, 1, 1)),
+        (
+            CoreBar(60_000, 1, 1, 1, 1),
+            CoreBar(0, 1, 1, 1, 1),
+            CoreBar(120_000, 1, 1, 1, 1),
+        ),
         source="provider",
     )
 

@@ -1,6 +1,20 @@
 from marketdata_provider.core.bar import Bar, MarketBar, RUNTIME_CONTRACT_VERSION
-from marketdata_provider.core.protocols import DataProvider, HistoricalDataProvider, IntrabarDataProvider, LowerTimeframeDataProvider
-from marketdata_provider.config import MarketDataConfig, BinanceConfig, BybitConfig, HistoryConfig, StreamingConfig, StorageConfig, OfflineDataConfig
+from marketdata_provider.core.protocols import (
+    DataProvider,
+    HistoricalDataProvider,
+    IntrabarDataProvider,
+    LowerTimeframeDataProvider,
+)
+from marketdata_provider.config import (
+    MarketDataConfig,
+    BinanceConfig,
+    BybitConfig,
+    HistoryConfig,
+    StreamingConfig,
+    StorageConfig,
+    OfflineDataConfig,
+    SymbolDiscoveryConfig,
+)
 from marketdata_provider.contracts import (
     Bar as ContractBar,
     BarQuery,
@@ -20,22 +34,74 @@ from marketdata_provider.contracts import (
     Timeframe,
     parse_timeframe,
 )
-from marketdata_provider.factories import create_candle_store, create_footprint_provider, create_live_kline_client, create_provider
+from marketdata_provider.factories import (
+    create_candle_store,
+    create_footprint_provider,
+    create_live_kline_client,
+    create_provider,
+)
 from marketdata_provider.providers import OfflineDataProvider
+from marketdata_provider.symbols import (
+    DEFAULT_STABLE_QUOTE_ASSETS,
+    SymbolInfo,
+    filter_symbol_infos,
+    is_stable_quoted,
+    normalize_binance_exchange_info_symbols,
+    normalize_bybit_instruments_info_symbols,
+    normalize_symbol,
+    quote_asset,
+    search_symbols,
+)
 
 MarketDataProvider = ContractMarketDataProvider
 
-__version__ = "2.18.0"
+__version__ = "4.0.0"
 __all__ = [
-    "Bar", "MarketBar", "DataProvider", "HistoricalDataProvider",
-    "IntrabarDataProvider", "LowerTimeframeDataProvider",
-    "MarketDataConfig", "BinanceConfig", "BybitConfig", "HistoryConfig", "StreamingConfig",
-    "StorageConfig", "OfflineDataConfig", "OfflineDataProvider",
-    "BarQuery", "BarSeries", "CandleStore", "ContractBar",
-    "ContractMarketDataProvider", "CoverageReport", "InstrumentKey",
-    "AggTrade", "FootprintBar", "FootprintLevel", "FootprintProvider", "FootprintQuery", "FootprintSeries",
+    "Bar",
+    "MarketBar",
+    "DataProvider",
+    "HistoricalDataProvider",
+    "IntrabarDataProvider",
+    "LowerTimeframeDataProvider",
+    "MarketDataConfig",
+    "BinanceConfig",
+    "BybitConfig",
+    "HistoryConfig",
+    "StreamingConfig",
+    "StorageConfig",
+    "OfflineDataConfig",
+    "SymbolDiscoveryConfig",
+    "OfflineDataProvider",
+    "BarQuery",
+    "BarSeries",
+    "CandleStore",
+    "ContractBar",
+    "ContractMarketDataProvider",
+    "CoverageReport",
+    "InstrumentKey",
+    "AggTrade",
+    "FootprintBar",
+    "FootprintLevel",
+    "FootprintProvider",
+    "FootprintQuery",
+    "FootprintSeries",
     "LiveKlineEvent",
     "MarketDataProvider",
-    "StoreResult", "Timeframe", "parse_timeframe", "RUNTIME_CONTRACT_VERSION",
-    "create_candle_store", "create_footprint_provider", "create_live_kline_client", "create_provider",
+    "StoreResult",
+    "Timeframe",
+    "parse_timeframe",
+    "RUNTIME_CONTRACT_VERSION",
+    "create_candle_store",
+    "create_footprint_provider",
+    "create_live_kline_client",
+    "create_provider",
+    "DEFAULT_STABLE_QUOTE_ASSETS",
+    "SymbolInfo",
+    "filter_symbol_infos",
+    "is_stable_quoted",
+    "normalize_binance_exchange_info_symbols",
+    "normalize_bybit_instruments_info_symbols",
+    "normalize_symbol",
+    "quote_asset",
+    "search_symbols",
 ]

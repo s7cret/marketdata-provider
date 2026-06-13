@@ -14,6 +14,11 @@ from marketdata_provider.errors import MDUnsupportedFeature
 from marketdata_provider.exchanges.binance.archive import fetch_binance_archive_bars
 from marketdata_provider.exchanges.binance.provider import binance_get_bars_sync
 from marketdata_provider.exchanges.bybit.provider import bybit_get_bars_sync
+from marketdata_provider.exchanges.public_spot import (
+    SUPPORTED_PUBLIC_MARKET_EXCHANGES,
+    public_market_get_bars_sync,
+    public_spot_get_bars_sync,
+)
 from marketdata_provider.store.candle_store import CandleStore
 from marketdata_provider.timeframes import close_time_ms
 
@@ -62,7 +67,10 @@ class BinanceRestSource:
             market=query.instrument.market,
             include_open_candle=self.config.include_open_candle,
         )
-        return [_market_bar_from_core(bar, query=query, source_transport="rest") for bar in bars]
+        return [
+            _market_bar_from_core(bar, query=query, source_transport="rest")
+            for bar in bars
+        ]
 
 
 class BybitRestSource:
@@ -79,7 +87,37 @@ class BybitRestSource:
             market=query.instrument.market,
             include_open_candle=self.config.include_open_candle,
         )
-        return [_market_bar_from_core(bar, query=query, source_transport="rest") for bar in bars]
+        return [
+            _market_bar_from_core(bar, query=query, source_transport="rest")
+            for bar in bars
+        ]
+
+
+class PublicMarketRestSource:
+    def __init__(self, config: MarketDataConfig):
+        self.config = config
+
+    def fetch(self, query: BarQuery) -> list[MarketBar]:
+        fetch_kwargs = {
+            "exchange": query.instrument.exchange,
+            "symbol": query.instrument.symbol,
+            "timeframe": query.timeframe.canonical,
+            "start": query.start_ms,
+            "end": query.end_ms,
+            "user_agent": self.config.binance.user_agent,
+            "include_open_candle": self.config.include_open_candle,
+        }
+        if query.instrument.market == "spot":
+            bars = public_spot_get_bars_sync(**fetch_kwargs)
+        else:
+            bars = public_market_get_bars_sync(
+                market=query.instrument.market,
+                **fetch_kwargs,
+            )
+        return [
+            _market_bar_from_core(bar, query=query, source_transport="rest")
+            for bar in bars
+        ]
 
 
 class MarketDataService:
@@ -202,10 +240,16 @@ class MarketDataService:
         duration = query.timeframe.duration_ms
         if self._manifest_spans(manifest, query, duration):
             return False
-        if manifest is not None and manifest.end_time is not None and duration is not None:
+        if (
+            manifest is not None
+            and manifest.end_time is not None
+            and duration is not None
+        ):
             missing_start = max(query.start_ms, manifest.end_time + duration)
             if missing_start < query.end_ms:
-                fetched_tail = self._fetch_from_sources(replace(query, start_ms=missing_start))
+                fetched_tail = self._fetch_from_sources(
+                    replace(query, start_ms=missing_start)
+                )
                 if fetched_tail:
                     self._append_stream(query, fetched_tail)
                     return True
@@ -281,17 +325,22 @@ class MarketDataService:
         )
 
     @staticmethod
-    def _manifest_spans(manifest: object, query: BarQuery, duration: int | None) -> bool:
+    def _manifest_spans(
+        manifest: object, query: BarQuery, duration: int | None
+    ) -> bool:
+        start_time = getattr(manifest, "start_time", None)
+        end_time = getattr(manifest, "end_time", None)
         return (
             duration is not None
-            and manifest is not None
-            and getattr(manifest, "start_time", None) is not None
-            and getattr(manifest, "end_time", None) is not None
-            and manifest.start_time <= query.start_ms
-            and manifest.end_time >= query.end_ms - duration
+            and isinstance(start_time, int)
+            and isinstance(end_time, int)
+            and start_time <= query.start_ms
+            and end_time >= query.end_ms - duration
         )
 
-    def _aggregate_stored_base(self, base_query: BarQuery, query: BarQuery) -> list[MarketBar]:
+    def _aggregate_stored_base(
+        self, base_query: BarQuery, query: BarQuery
+    ) -> list[MarketBar]:
         base_bars = self.store.segments.iter_all(
             exchange=base_query.instrument.exchange,
             market=base_query.instrument.market,
@@ -309,14 +358,22 @@ class MarketDataService:
                 rest_query = _remaining_recent_query(query, archive, self.config)
                 if rest_query is None:
                     return archive
-                return _merge_bars(archive, BinanceRestSource(self.config).fetch(rest_query))
+                return _merge_bars(
+                    archive, BinanceRestSource(self.config).fetch(rest_query)
+                )
             return BinanceRestSource(self.config).fetch(query)
         if query.instrument.exchange == "bybit":
             return BybitRestSource(self.config).fetch(query)
-        raise MDUnsupportedFeature(f"Unsupported provider exchange: {query.instrument.exchange}")
+        if query.instrument.exchange in SUPPORTED_PUBLIC_MARKET_EXCHANGES:
+            return PublicMarketRestSource(self.config).fetch(query)
+        raise MDUnsupportedFeature(
+            f"Unsupported provider exchange: {query.instrument.exchange}"
+        )
 
 
-def _market_bar_from_core(bar: Bar, *, query: BarQuery, source_transport: str) -> MarketBar:
+def _market_bar_from_core(
+    bar: Bar, *, query: BarQuery, source_transport: str
+) -> MarketBar:
     return MarketBar(
         time=bar.time,
         open=bar.open,
@@ -387,10 +444,14 @@ def _merge_bars(*groups: list[MarketBar]) -> list[MarketBar]:
     return [by_time[t] for t in sorted(by_time)]
 
 
-def _aggregate_market_bars(bars: Iterable[MarketBar], *, query: BarQuery) -> list[MarketBar]:
+def _aggregate_market_bars(
+    bars: Iterable[MarketBar], *, query: BarQuery
+) -> list[MarketBar]:
     duration = query.timeframe.duration_ms
     if duration is None:
-        raise MDUnsupportedFeature(f"Aggregation unsupported for timeframe: {query.timeframe.canonical}")
+        raise MDUnsupportedFeature(
+            f"Aggregation unsupported for timeframe: {query.timeframe.canonical}"
+        )
     out: list[MarketBar] = []
     current_bucket_time: int | None = None
     current_bucket: list[MarketBar] = []
@@ -401,7 +462,9 @@ def _aggregate_market_bars(bars: Iterable[MarketBar], *, query: BarQuery) -> lis
         if current_bucket_time is None:
             current_bucket_time = bucket_time
         if bucket_time != current_bucket_time:
-            out.append(_aggregate_bucket(current_bucket_time, current_bucket, query=query))
+            out.append(
+                _aggregate_bucket(current_bucket_time, current_bucket, query=query)
+            )
             current_bucket_time = bucket_time
             current_bucket = []
         current_bucket.append(bar)
@@ -410,7 +473,9 @@ def _aggregate_market_bars(bars: Iterable[MarketBar], *, query: BarQuery) -> lis
     return out
 
 
-def _aggregate_bucket(bucket_time: int, bucket: list[MarketBar], *, query: BarQuery) -> MarketBar:
+def _aggregate_bucket(
+    bucket_time: int, bucket: list[MarketBar], *, query: BarQuery
+) -> MarketBar:
     traded = [bar for bar in bucket if bar.volume > 0]
     price_bucket = traded or bucket
     return MarketBar(

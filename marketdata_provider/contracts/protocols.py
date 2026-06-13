@@ -30,7 +30,7 @@ class CandleStore(Protocol):
 
 @runtime_checkable
 class LiveKlineClient(Protocol):
-    async def events(
+    def events(
         self,
         *,
         max_messages: int | None = None,

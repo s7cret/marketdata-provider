@@ -7,8 +7,21 @@ class MemoryProvider:
     def __init__(self, bars: Sequence[Bar]):
         self.bars = list(bars)
 
-    def get_bars(self, symbol: str, timeframe: str, start_ms: int | None, end_ms: int | None, *, max_bars: int | None = None):
-        out = [bar for bar in self.bars if (start_ms is None or bar.time >= start_ms) and (end_ms is None or bar.time < end_ms)]
+    def get_bars(
+        self,
+        symbol: str,
+        timeframe: str,
+        start_ms: int | None,
+        end_ms: int | None,
+        *,
+        max_bars: int | None = None,
+    ):
+        out = [
+            bar
+            for bar in self.bars
+            if (start_ms is None or bar.time >= start_ms)
+            and (end_ms is None or bar.time < end_ms)
+        ]
         return out if max_bars is None else out[:max_bars]
 
 

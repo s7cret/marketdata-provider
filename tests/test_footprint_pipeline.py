@@ -1,8 +1,12 @@
 import httpx
-import pytest
 
 from marketdata_provider.config import BinanceConfig, MarketDataConfig, StorageConfig
-from marketdata_provider.contracts import AggTrade, FootprintQuery, InstrumentKey, parse_timeframe
+from marketdata_provider.contracts import (
+    AggTrade,
+    FootprintQuery,
+    InstrumentKey,
+    parse_timeframe,
+)
 from marketdata_provider.exchanges.binance import trades as binance_trades
 from marketdata_provider.footprint.aggregate import aggregate_trades_to_footprint
 from marketdata_provider.footprint.service import FootprintService
@@ -44,25 +48,46 @@ def test_aggregate_trades_to_footprint_buckets_price_and_side(tmp_path):
 
     assert len(bars) == 1
     assert bars[0].trades_count == 3
-    assert [(level.price_low, level.buy_volume, level.sell_volume) for level in bars[0].levels] == [
+    assert [
+        (level.price_low, level.buy_volume, level.sell_volume)
+        for level in bars[0].levels
+    ] == [
         (100.0, 1.0, 2.0),
         (110.0, 3.0, 0.0),
     ]
 
 
-def test_footprint_service_stores_raw_agg_trades_and_derived_footprint(tmp_path, monkeypatch):
+def test_footprint_service_stores_raw_agg_trades_and_derived_footprint(
+    tmp_path, monkeypatch
+):
     calls = []
 
-    def fake_fetch(symbol, start, end, cfg, *, market=None, timeout=15.0, max_retries=3, max_trades=None):
+    def fake_fetch(
+        symbol,
+        start,
+        end,
+        cfg,
+        *,
+        market=None,
+        timeout=15.0,
+        max_retries=3,
+        max_trades=None,
+    ):
         calls.append((symbol, start, end, market))
         return [
             AggTrade(1, 1_000, 100.1, 1.0, False),
             AggTrade(2, 2_000, 109.9, 2.0, True),
         ]
 
-    monkeypatch.setattr("marketdata_provider.footprint.service.binance_get_agg_trades_sync", fake_fetch)
+    monkeypatch.setattr(
+        "marketdata_provider.footprint.service.binance_get_agg_trades_sync", fake_fetch
+    )
     query = _query(tmp_path)
-    service = FootprintService(MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path), binance=BinanceConfig()))
+    service = FootprintService(
+        MarketDataConfig(
+            storage=StorageConfig(cache_dir=tmp_path), binance=BinanceConfig()
+        )
+    )
 
     series = service.fetch_footprint(query)
 
@@ -88,7 +113,9 @@ def test_binance_get_agg_trades_uses_separate_endpoint(monkeypatch):
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append((request.url.path, dict(request.url.params)))
-        return httpx.Response(200, json=[{"a": 1, "p": "100", "q": "1", "T": 1000, "m": False}])
+        return httpx.Response(
+            200, json=[{"a": 1, "p": "100", "q": "1", "T": 1000, "m": False}]
+        )
 
     real_client = httpx.Client
 
@@ -98,9 +125,10 @@ def test_binance_get_agg_trades_uses_separate_endpoint(monkeypatch):
 
     monkeypatch.setattr(binance_trades.httpx, "Client", factory)
 
-    out = binance_trades.binance_get_agg_trades_sync("BTCUSDT", 0, 60_000, BinanceConfig(), market="usdm")
+    out = binance_trades.binance_get_agg_trades_sync(
+        "BTCUSDT", 0, 60_000, BinanceConfig(), market="usdm"
+    )
 
     assert len(out) == 1
     assert seen[0][0] == "/fapi/v1/aggTrades"
     assert seen[0][1]["startTime"] == "0"
-

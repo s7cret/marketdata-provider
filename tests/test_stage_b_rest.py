@@ -3,7 +3,12 @@ from zipfile import ZipFile
 import httpx
 import pytest
 
-from marketdata_provider.config import BinanceConfig, BybitConfig, MarketDataConfig, StorageConfig
+from marketdata_provider.config import (
+    BinanceConfig,
+    BybitConfig,
+    MarketDataConfig,
+    StorageConfig,
+)
 from marketdata_provider.contracts.instrument import InstrumentKey
 from marketdata_provider.contracts.query import BarQuery
 from marketdata_provider.contracts.timeframe import parse_timeframe
@@ -18,9 +23,11 @@ from marketdata_provider.store.candle_store import CandleStore
 
 def _client_factory(monkeypatch, module, handler):
     real_client = httpx.Client
+
     def factory(*args, **kwargs):
         kwargs["transport"] = httpx.MockTransport(handler)
         return real_client(*args, **kwargs)
+
     monkeypatch.setattr(module.httpx, "Client", factory)
 
 
@@ -59,8 +66,12 @@ def _one_minute_bars(count: int = 30) -> list[MarketBar]:
 
 
 def _assert_derived_15m_from_1m(store: CandleStore) -> None:
-    base = store.get_market_bars(exchange="binance", market="spot", symbol="BTCUSDT", timeframe="1m")
-    derived = store.get_market_bars(exchange="binance", market="spot", symbol="BTCUSDT", timeframe="15m")
+    base = store.get_market_bars(
+        exchange="binance", market="spot", symbol="BTCUSDT", timeframe="1m"
+    )
+    derived = store.get_market_bars(
+        exchange="binance", market="spot", symbol="BTCUSDT", timeframe="15m"
+    )
 
     assert len(base) == 30
     assert [bar.time for bar in derived] == [0, 900_000]
@@ -75,18 +86,31 @@ def _assert_derived_15m_from_1m(store: CandleStore) -> None:
 
 def test_binance_pagination_and_open_candle_exclusion(monkeypatch):
     calls = []
+
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/time"):
             return httpx.Response(200, json={"serverTime": 121000})
         calls.append(dict(request.url.params))
         start = int(request.url.params.get("startTime", "1000"))
         if start <= 1000:
-            rows = [[1000, "1", "2", "0.5", "1.5", "10", 60999], [61000, "1.5", "2", "1", "1.2", "5", 120999]]
+            rows = [
+                [1000, "1", "2", "0.5", "1.5", "10", 60999],
+                [61000, "1.5", "2", "1", "1.2", "5", 120999],
+            ]
         else:
             rows = [[121000, "1", "2", "0.5", "1.1", "1", 180999]]
         return httpx.Response(200, json=rows)
+
     _client_factory(monkeypatch, binance_provider, handler)
-    bars = binance_provider.binance_get_bars_sync("BINANCE:BTCUSDT", "1m", 1000, None, BinanceConfig(max_limit_spot=2), market="spot", max_bars=3)
+    bars = binance_provider.binance_get_bars_sync(
+        "BINANCE:BTCUSDT",
+        "1m",
+        1000,
+        None,
+        BinanceConfig(max_limit_spot=2),
+        market="spot",
+        max_bars=3,
+    )
     assert [b.time for b in bars] == [1000, 61000]
     assert calls[1]["startTime"] == "121000"
 
@@ -96,9 +120,18 @@ def test_binance_rate_limit_error(monkeypatch):
         if request.url.path.endswith("/time"):
             return httpx.Response(200, json={"serverTime": 999999})
         return httpx.Response(429, headers={"Retry-After": "0"}, json={"code": -1003})
+
     _client_factory(monkeypatch, binance_provider, handler)
     with pytest.raises(MDNetworkUnavailable) as e:
-        binance_provider.binance_get_bars_sync("BINANCE:BTCUSDT", "1m", None, None, BinanceConfig(), market="spot", max_retries=0)
+        binance_provider.binance_get_bars_sync(
+            "BINANCE:BTCUSDT",
+            "1m",
+            None,
+            None,
+            BinanceConfig(),
+            market="spot",
+            max_retries=0,
+        )
     assert "rate limit" in e.value.message.lower()
 
 
@@ -133,7 +166,9 @@ def test_marketdata_service_archive_first_prefers_monthly_cache(tmp_path):
             "0,1,1,1,1,1,59999\n60799,2,2.5,1.5,2.1,4,120798\n120000,3,3,3,3,3,179999\n",
         )
 
-    series = MarketDataService(MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))).fetch_bars(
+    series = MarketDataService(
+        MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))
+    ).fetch_bars(
         BarQuery(
             instrument=InstrumentKey("binance", "spot", "BTCUSDT"),
             timeframe=parse_timeframe("1m"),
@@ -160,9 +195,13 @@ def test_marketdata_service_archive_first_falls_back_to_daily_cache(tmp_path):
     )
     daily.parent.mkdir(parents=True)
     with ZipFile(daily, "w") as zf:
-        zf.writestr("BTCUSDT-1m-1970-01-01.csv", "0,1,1,1,1,1,59999\n60000,2,2,2,2,2,119999\n")
+        zf.writestr(
+            "BTCUSDT-1m-1970-01-01.csv", "0,1,1,1,1,1,59999\n60000,2,2,2,2,2,119999\n"
+        )
 
-    series = MarketDataService(MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))).fetch_bars(
+    series = MarketDataService(
+        MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))
+    ).fetch_bars(
         BarQuery(
             instrument=InstrumentKey("binance", "spot", "BTCUSDT"),
             timeframe=parse_timeframe("1m"),
@@ -193,7 +232,9 @@ def test_marketdata_service_daily_aggregation_uses_first_traded_open(tmp_path):
             "0,10,10,10,10,0,59999\n60000,8,11,7,9,2,119999\n120000,9,9,9,9,0,179999\n",
         )
 
-    series = MarketDataService(MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))).fetch_bars(
+    series = MarketDataService(
+        MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))
+    ).fetch_bars(
         BarQuery(
             instrument=InstrumentKey("binance", "spot", "BTCUSDT"),
             timeframe=parse_timeframe("1D"),
@@ -207,7 +248,9 @@ def test_marketdata_service_daily_aggregation_uses_first_traded_open(tmp_path):
     assert series.bars[0].close == 9.0
 
 
-def test_marketdata_service_uses_base_1m_policy_and_materializes_derived_15m(tmp_path, monkeypatch):
+def test_marketdata_service_uses_base_1m_policy_and_materializes_derived_15m(
+    tmp_path, monkeypatch
+):
     calls = []
 
     def fetch_from_source(self, query):
@@ -217,7 +260,9 @@ def test_marketdata_service_uses_base_1m_policy_and_materializes_derived_15m(tmp
 
     monkeypatch.setattr(MarketDataService, "_fetch_from_sources", fetch_from_source)
 
-    service = MarketDataService(MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path)))
+    service = MarketDataService(
+        MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))
+    )
     series = service.fetch_bars(_query("15m"))
 
     assert len(calls) == 1
@@ -228,7 +273,9 @@ def test_marketdata_service_uses_base_1m_policy_and_materializes_derived_15m(tmp
     _assert_derived_15m_from_1m(service.store)
 
 
-def test_marketdata_service_materializes_15m_from_warm_1m_cache_without_source_fetch(tmp_path, monkeypatch):
+def test_marketdata_service_materializes_15m_from_warm_1m_cache_without_source_fetch(
+    tmp_path, monkeypatch
+):
     store = CandleStore(tmp_path)
     store.segments.replace_all(
         _one_minute_bars(),
@@ -239,11 +286,15 @@ def test_marketdata_service_materializes_15m_from_warm_1m_cache_without_source_f
     )
 
     def fail_source_fetch(self, query):
-        raise AssertionError(f"source fetch should not run for warm base cache: {query}")
+        raise AssertionError(
+            f"source fetch should not run for warm base cache: {query}"
+        )
 
     monkeypatch.setattr(MarketDataService, "_fetch_from_sources", fail_source_fetch)
 
-    service = MarketDataService(MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path)))
+    service = MarketDataService(
+        MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))
+    )
     series = service.fetch_bars(_query("15m"))
 
     assert [bar.time for bar in series.bars] == [0, 900_000]
@@ -252,7 +303,9 @@ def test_marketdata_service_materializes_15m_from_warm_1m_cache_without_source_f
     _assert_derived_15m_from_1m(service.store)
 
 
-def test_marketdata_service_streams_base_cache_for_derived_materialization(tmp_path, monkeypatch):
+def test_marketdata_service_streams_base_cache_for_derived_materialization(
+    tmp_path, monkeypatch
+):
     store = CandleStore(tmp_path)
     store.segments.replace_all(
         _one_minute_bars(),
@@ -268,10 +321,20 @@ def test_marketdata_service_streams_base_cache_for_derived_materialization(tmp_p
         return original_read_all(*args, **kwargs)
 
     original_read_all = store.segments.read_all
-    monkeypatch.setattr("marketdata_provider.store.segment_store.SegmentStore.read_all", fail_read_all)
-    monkeypatch.setattr(MarketDataService, "_fetch_from_sources", lambda self, query: (_ for _ in ()).throw(AssertionError("source fetch should not run")))
+    monkeypatch.setattr(
+        "marketdata_provider.store.segment_store.SegmentStore.read_all", fail_read_all
+    )
+    monkeypatch.setattr(
+        MarketDataService,
+        "_fetch_from_sources",
+        lambda self, query: (_ for _ in ()).throw(
+            AssertionError("source fetch should not run")
+        ),
+    )
 
-    service = MarketDataService(MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path)))
+    service = MarketDataService(
+        MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))
+    )
     series = service.fetch_bars(_query("15m"))
 
     assert [bar.time for bar in series.bars] == [0, 900_000]
@@ -284,7 +347,9 @@ def test_candle_store_write_is_idempotent_across_provider_provenance(tmp_path):
         start_ms=0,
         end_ms=900000,
     )
-    provider = MarketDataService(MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))).fetch_bars
+    provider = MarketDataService(
+        MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))
+    ).fetch_bars
 
     monthly = (
         tmp_path
@@ -301,7 +366,9 @@ def test_candle_store_write_is_idempotent_across_provider_provenance(tmp_path):
         zf.writestr("BTCUSDT-15m-1970-01.csv", "0,1,2,0.5,1.5,10,899999\n")
 
     series = provider(query)
-    store = create_candle_store(MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path)))
+    store = create_candle_store(
+        MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))
+    )
     result = store.write(series)
 
     assert result.success
@@ -310,18 +377,33 @@ def test_candle_store_write_is_idempotent_across_provider_provenance(tmp_path):
 
 def test_bybit_reverse_sort_pagination_and_open_candle_exclusion(monkeypatch):
     calls = []
+
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/time"):
-            return httpx.Response(200, json={"retCode": 0, "result": {"timeNano": "121000000000"}})
+            return httpx.Response(
+                200, json={"retCode": 0, "result": {"timeNano": "121000000000"}}
+            )
         calls.append(dict(request.url.params))
         start = int(request.url.params.get("start", "1000"))
         if start <= 1000:
-            rows = [[61000, "1.5", "2", "1", "1.2", "5"], [1000, "1", "2", "0.5", "1.5", "10"]]
+            rows = [
+                [61000, "1.5", "2", "1", "1.2", "5"],
+                [1000, "1", "2", "0.5", "1.5", "10"],
+            ]
         else:
             rows = [[121000, "1", "2", "0.5", "1.1", "1"]]
         return httpx.Response(200, json={"retCode": 0, "result": {"list": rows}})
+
     _client_factory(monkeypatch, bybit_provider, handler)
-    bars = bybit_provider.bybit_get_bars_sync("BYBIT:BTCUSDT", "1m", 1000, None, BybitConfig(max_limit=2), market="spot", max_bars=3)
+    bars = bybit_provider.bybit_get_bars_sync(
+        "BYBIT:BTCUSDT",
+        "1m",
+        1000,
+        None,
+        BybitConfig(max_limit=2),
+        market="spot",
+        max_bars=3,
+    )
     assert [b.time for b in bars] == [1000, 61000]
     assert calls[1]["start"] == "121000"
 
@@ -329,14 +411,30 @@ def test_bybit_reverse_sort_pagination_and_open_candle_exclusion(monkeypatch):
 def test_bybit_rate_limit_retcode(monkeypatch):
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/time"):
-            return httpx.Response(200, json={"retCode": 0, "result": {"timeSecond": "999"}})
+            return httpx.Response(
+                200, json={"retCode": 0, "result": {"timeSecond": "999"}}
+            )
         return httpx.Response(200, json={"retCode": 10006, "retMsg": "Too many visits"})
+
     _client_factory(monkeypatch, bybit_provider, handler)
     with pytest.raises(MDNetworkUnavailable):
-        bybit_provider.bybit_get_bars_sync("BYBIT:BTCUSDT", "1m", None, None, BybitConfig(), market="spot", max_retries=0)
+        bybit_provider.bybit_get_bars_sync(
+            "BYBIT:BTCUSDT",
+            "1m",
+            None,
+            None,
+            BybitConfig(),
+            market="spot",
+            max_retries=0,
+        )
 
 
-@pytest.mark.skipif(__import__("os").getenv("RUN_MARKETDATA_NETWORK_TESTS") != "1", reason="network tests disabled by default")
+@pytest.mark.skipif(
+    __import__("os").getenv("RUN_MARKETDATA_NETWORK_TESTS") != "1",
+    reason="network tests disabled by default",
+)
 def test_network_smoke_binance_disabled_by_default():
-    bars = binance_provider.binance_get_bars_sync("BINANCE:BTCUSDT", "1m", None, None, BinanceConfig(), market="spot", max_bars=2)
+    bars = binance_provider.binance_get_bars_sync(
+        "BINANCE:BTCUSDT", "1m", None, None, BinanceConfig(), market="spot", max_bars=2
+    )
     assert len(bars) <= 2

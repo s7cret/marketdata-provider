@@ -7,8 +7,17 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Literal
 
-from marketdata_provider.errors import MDNetworkUnavailable, MDSymbolUnsupported, MDUnsupportedFeature
-from marketdata_provider.streaming.kline import KlineUpdate, bybit_topic, normalize_binance_kline, normalize_bybit_kline
+from marketdata_provider.errors import (
+    MDNetworkUnavailable,
+    MDSymbolUnsupported,
+    MDUnsupportedFeature,
+)
+from marketdata_provider.streaming.kline import (
+    KlineUpdate,
+    bybit_topic,
+    normalize_binance_kline,
+    normalize_bybit_kline,
+)
 from marketdata_provider.streaming.supervisor import require_live_stream_enabled
 from marketdata_provider.timeframes import to_binance_interval
 
@@ -40,7 +49,14 @@ class CoalescingKlineQueue:
         self.diagnostics: list[StreamDiagnostic] = []
 
     def put(self, update: KlineUpdate) -> None:
-        key = (update.exchange, update.market, update.symbol, update.timeframe, update.source_kind, update.open_time)
+        key = (
+            update.exchange,
+            update.market,
+            update.symbol,
+            update.timeframe,
+            update.source_kind,
+            update.open_time,
+        )
         if key in self._items:
             self._items[key] = update
             self.coalesced += 1
@@ -49,7 +65,13 @@ class CoalescingKlineQueue:
             oldest = next(iter(self._items))
             self._items.pop(oldest)
             self.dropped += 1
-            self.diagnostics.append(StreamDiagnostic("MD_STREAM_BACKPRESSURE_DROP", "bounded stream queue overflow; oldest candle update dropped", {"maxsize": self.maxsize}))
+            self.diagnostics.append(
+                StreamDiagnostic(
+                    "MD_STREAM_BACKPRESSURE_DROP",
+                    "bounded stream queue overflow; oldest candle update dropped",
+                    {"maxsize": self.maxsize},
+                )
+            )
         self._items[key] = update
 
     def drain(self) -> list[KlineUpdate]:
@@ -59,7 +81,17 @@ class CoalescingKlineQueue:
 
 
 class PublicKlineWebSocketClient:
-    def __init__(self, *, exchange: Literal["binance", "bybit"], market: str, symbol: str, timeframe: str, source_kind: Literal["trade_kline", "mark_kline", "index_kline"] = "trade_kline"):
+    def __init__(
+        self,
+        *,
+        exchange: Literal["binance", "bybit"],
+        market: str,
+        symbol: str,
+        timeframe: str,
+        source_kind: Literal[
+            "trade_kline", "mark_kline", "index_kline"
+        ] = "trade_kline",
+    ):
         self.exchange = exchange
         self.market = market.lower()
         self.symbol = symbol.upper()
@@ -80,41 +112,70 @@ class PublicKlineWebSocketClient:
                 # binancefuture.com host is the production futures stream host
                 # that emits the same kline payload shape.
                 return f"wss://fstream.binancefuture.com/ws/{stream}", None
-            raise MDSymbolUnsupported(f"Unsupported Binance WebSocket market: {self.market}")
+            raise MDSymbolUnsupported(
+                f"Unsupported Binance WebSocket market: {self.market}"
+            )
         if self.exchange == "bybit":
             if self.market not in {"spot", "linear"}:
-                raise MDSymbolUnsupported(f"Unsupported Bybit WebSocket market: {self.market}")
-            base = "wss://stream.bybit.com/v5/public/spot" if self.market == "spot" else "wss://stream.bybit.com/v5/public/linear"
+                raise MDSymbolUnsupported(
+                    f"Unsupported Bybit WebSocket market: {self.market}"
+                )
+            base = (
+                "wss://stream.bybit.com/v5/public/spot"
+                if self.market == "spot"
+                else "wss://stream.bybit.com/v5/public/linear"
+            )
             topic = bybit_topic(self.timeframe, self.symbol)
             return base, {"op": "subscribe", "args": [topic]}
         raise MDUnsupportedFeature(f"Unsupported WebSocket exchange: {self.exchange}")
 
-    async def events(self, *, max_messages: int | None = None, timeout_s: float | None = None) -> AsyncIterator[LiveKlineEvent]:
+    async def events(
+        self, *, max_messages: int | None = None, timeout_s: float | None = None
+    ) -> AsyncIterator[LiveKlineEvent]:
         require_live_stream_enabled()
         if importlib.util.find_spec("websockets") is None:
-            raise MDNetworkUnavailable("Live WebSocket requires optional dependency websockets")
+            raise MDNetworkUnavailable(
+                "Live WebSocket requires optional dependency websockets"
+            )
         import websockets
 
         seen = 0
         deadline = None if timeout_s is None else time.monotonic() + timeout_s
         try:
-            async with websockets.connect(self.url, ping_interval=20, close_timeout=5) as ws:
+            async with websockets.connect(
+                self.url, ping_interval=20, close_timeout=5
+            ) as ws:
                 if self.subscribe is not None:
                     await ws.send(json.dumps(self.subscribe, separators=(",", ":")))
                 while max_messages is None or seen < max_messages:
                     if deadline is not None and time.monotonic() >= deadline:
                         break
-                    remaining = None if deadline is None else max(0.1, deadline - time.monotonic())
+                    remaining = (
+                        None
+                        if deadline is None
+                        else max(0.1, deadline - time.monotonic())
+                    )
                     raw_text = await asyncio.wait_for(ws.recv(), timeout=remaining)
                     payload = json.loads(raw_text)
                     if self.exchange == "bybit" and payload.get("op") == "subscribe":
                         continue
                     if self.exchange == "binance":
-                        update = normalize_binance_kline(payload, market=self.market, timeframe=self.timeframe, source_kind=self.source_kind, received_at=int(time.time() * 1000))
+                        update = normalize_binance_kline(
+                            payload,
+                            market=self.market,
+                            timeframe=self.timeframe,
+                            source_kind=self.source_kind,
+                            received_at=int(time.time() * 1000),
+                        )
                         seen += 1
                         yield LiveKlineEvent(update, payload)
                     else:
-                        for update in normalize_bybit_kline(payload, market=self.market, source_kind=self.source_kind, received_at=int(time.time() * 1000)):
+                        for update in normalize_bybit_kline(
+                            payload,
+                            market=self.market,
+                            source_kind=self.source_kind,
+                            received_at=int(time.time() * 1000),
+                        ):
                             seen += 1
                             yield LiveKlineEvent(update, payload)
                             if max_messages is not None and seen >= max_messages:
@@ -122,4 +183,12 @@ class PublicKlineWebSocketClient:
         except asyncio.TimeoutError:
             return
         except OSError as e:
-            raise MDNetworkUnavailable("Live WebSocket connection failed", details={"exchange": self.exchange, "market": self.market, "url": self.url, "error": str(e)}) from e
+            raise MDNetworkUnavailable(
+                "Live WebSocket connection failed",
+                details={
+                    "exchange": self.exchange,
+                    "market": self.market,
+                    "url": self.url,
+                    "error": str(e),
+                },
+            ) from e

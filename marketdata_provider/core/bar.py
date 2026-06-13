@@ -4,6 +4,7 @@ from typing import Any
 
 RUNTIME_CONTRACT_VERSION = "1.4"
 
+
 @dataclass(frozen=True, slots=True)
 class Bar:
     """Canonical market data bar.
@@ -19,6 +20,7 @@ class Bar:
     close: float
     volume: float = 0.0
     time_close: int | None = None
+
 
 @dataclass(frozen=True, slots=True)
 class MarketBar(Bar):
@@ -39,4 +41,12 @@ class MarketBar(Bar):
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_bar(self) -> Bar:
-        return Bar(self.time, self.open, self.high, self.low, self.close, self.volume, self.time_close)
+        return Bar(
+            self.time,
+            self.open,
+            self.high,
+            self.low,
+            self.close,
+            self.volume,
+            self.time_close,
+        )

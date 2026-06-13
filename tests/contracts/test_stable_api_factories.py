@@ -4,9 +4,17 @@ from pathlib import Path
 from typing import AsyncIterator
 
 import pytest
-from marketdata_provider import create_candle_store, create_live_kline_client, create_provider
+from marketdata_provider import (
+    create_candle_store,
+    create_live_kline_client,
+    create_provider,
+)
 from marketdata_provider import LiveKlineEvent as TopLevelLiveKlineEvent
-from marketdata_provider.config import MarketDataConfig, OfflineDataConfig, StorageConfig
+from marketdata_provider.config import (
+    MarketDataConfig,
+    OfflineDataConfig,
+    StorageConfig,
+)
 from marketdata_provider.contracts import (
     Bar,
     BarQuery,
@@ -35,8 +43,12 @@ def _query() -> BarQuery:
     )
 
 
-def test_create_candle_store_returns_contract_protocol_and_preserves_window(tmp_path: Path) -> None:
-    store = create_candle_store(MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path)))
+def test_create_candle_store_returns_contract_protocol_and_preserves_window(
+    tmp_path: Path,
+) -> None:
+    store = create_candle_store(
+        MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))
+    )
     assert isinstance(store, CandleStore)
 
     query = _query()
@@ -48,9 +60,33 @@ def test_create_candle_store_returns_contract_protocol_and_preserves_window(tmp_
         source="storage",
     )
     bars = (
-        Bar(query.instrument, query.timeframe, 0, 59_999, 1.0, 1.0, 1.0, 1.0, 1.0, True),
-        Bar(query.instrument, query.timeframe, 60_000, 119_999, 2.0, 2.0, 2.0, 2.0, 2.0, True),
-        Bar(query.instrument, query.timeframe, 120_000, 179_999, 3.0, 3.0, 3.0, 3.0, 3.0, True),
+        Bar(
+            query.instrument, query.timeframe, 0, 59_999, 1.0, 1.0, 1.0, 1.0, 1.0, True
+        ),
+        Bar(
+            query.instrument,
+            query.timeframe,
+            60_000,
+            119_999,
+            2.0,
+            2.0,
+            2.0,
+            2.0,
+            2.0,
+            True,
+        ),
+        Bar(
+            query.instrument,
+            query.timeframe,
+            120_000,
+            179_999,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            3.0,
+            True,
+        ),
     )
 
     result = store.write(
@@ -69,8 +105,12 @@ def test_create_candle_store_returns_contract_protocol_and_preserves_window(tmp_
     assert series.coverage.delivered_end_ms == 120_000
 
 
-def test_candle_store_write_rejects_mixed_series_before_persisting(tmp_path: Path) -> None:
-    store = create_candle_store(MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path)))
+def test_candle_store_write_rejects_mixed_series_before_persisting(
+    tmp_path: Path,
+) -> None:
+    store = create_candle_store(
+        MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))
+    )
     query = _query()
     mixed_bar = Bar(
         InstrumentKey("bybit", "linear", "ETHUSDT"),
@@ -89,7 +129,9 @@ def test_candle_store_write_rejects_mixed_series_before_persisting(tmp_path: Pat
         BarSeries(
             query=query,
             bars=(mixed_bar,),
-            coverage=CoverageReport(60_000, 120_000, 60_000, 120_000, source_mix=("test",)),
+            coverage=CoverageReport(
+                60_000, 120_000, 60_000, 120_000, source_mix=("test",)
+            ),
         )
     )
 
@@ -101,7 +143,13 @@ def test_candle_store_write_rejects_mixed_series_before_persisting(tmp_path: Pat
 
 
 @pytest.mark.parametrize(
-    ("stored_exchange", "stored_market", "stored_symbol", "stored_timeframe", "message"),
+    (
+        "stored_exchange",
+        "stored_market",
+        "stored_symbol",
+        "stored_timeframe",
+        "message",
+    ),
     [
         ("bybit", "linear", "ETHUSDT", "1m", "instrument does not match"),
         ("binance", "spot", "BTCUSDT", "5m", "timeframe does not match"),
@@ -115,7 +163,9 @@ def test_candle_store_read_rejects_rows_with_mismatched_embedded_identity(
     stored_timeframe: str,
     message: str,
 ) -> None:
-    store = create_candle_store(MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path)))
+    store = create_candle_store(
+        MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))
+    )
     query = _query()
     corrupt_bar = MarketBar(
         time=60_000,
@@ -145,7 +195,9 @@ def test_candle_store_read_rejects_rows_with_mismatched_embedded_identity(
         store.read(query)
 
 
-def test_create_provider_can_wrap_offline_data_as_canonical_protocol(tmp_path: Path) -> None:
+def test_create_provider_can_wrap_offline_data_as_canonical_protocol(
+    tmp_path: Path,
+) -> None:
     source = tmp_path / "bars.csv"
     source.write_text(
         "time,open,high,low,close,volume,time_close\n"
@@ -174,7 +226,9 @@ def test_create_live_kline_client_returns_contract_protocol() -> None:
 
 
 @pytest.mark.asyncio
-async def test_create_live_kline_client_yields_canonical_events(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_create_live_kline_client_yields_canonical_events(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class FakeRawClient:
         def __init__(self, **kwargs):
             self.kwargs = kwargs
@@ -205,7 +259,9 @@ async def test_create_live_kline_client_yields_canonical_events(monkeypatch: pyt
                 raw_payload={"stream": "test"},
             )
 
-    monkeypatch.setattr("marketdata_provider.streaming.PublicKlineWebSocketClient", FakeRawClient)
+    monkeypatch.setattr(
+        "marketdata_provider.streaming.PublicKlineWebSocketClient", FakeRawClient
+    )
     client = create_live_kline_client(
         MarketDataConfig(),
         instrument=InstrumentKey("binance", "spot", "BTCUSDT"),

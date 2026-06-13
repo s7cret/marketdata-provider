@@ -35,7 +35,9 @@ class FootprintQuery:
             raise InvalidBarQueryError(f"unsupported gap_policy: {self.gap_policy!r}")
         if self.price_bucket is None:
             if self.tick_size is None or self.tick_size <= 0:
-                raise InvalidBarQueryError("price_bucket or positive tick_size is required")
+                raise InvalidBarQueryError(
+                    "price_bucket or positive tick_size is required"
+                )
             if self.ticks_per_row <= 0:
                 raise InvalidBarQueryError("ticks_per_row must be positive")
         elif self.price_bucket <= 0:
@@ -89,4 +91,3 @@ class FootprintSeries:
     query: FootprintQuery
     bars: tuple[FootprintBar, ...]
     coverage: CoverageReport
-

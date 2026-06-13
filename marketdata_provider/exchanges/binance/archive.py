@@ -119,7 +119,9 @@ def fill_binance_archive_gaps(
     if duration is None or _archive_market_path(market) is None:
         return [current[t] for t in sorted(current)]
 
-    missing = _coalesce_intervals(_missing_intervals(current, start=start, end=end, duration=duration))
+    missing = _coalesce_intervals(
+        _missing_intervals(current, start=start, end=end, duration=duration)
+    )
     if not missing:
         return [current[t] for t in sorted(current)]
 
@@ -145,7 +147,9 @@ def _dedupe_sorted(bars: Iterable[Bar]) -> list[Bar]:
     return [by_time[t] for t in sorted(by_time)]
 
 
-def _range_coverage_complete(bars: Iterable[Bar], *, start: int, end: int, duration: int) -> bool:
+def _range_coverage_complete(
+    bars: Iterable[Bar], *, start: int, end: int, duration: int
+) -> bool:
     delivered = {bar.time for bar in bars}
     expected = set(range(start, end, duration))
     return bool(expected) and expected.issubset(delivered)
@@ -177,7 +181,9 @@ def _load_archive_bars(
                     cache_dir=cache_dir,
                 )
             )
-        if _archive_covers_intervals(bars, missing_intervals, duration=timeframe_ms(timeframe)):
+        if _archive_covers_intervals(
+            bars, missing_intervals, duration=timeframe_ms(timeframe)
+        ):
             return bars
 
     months = _months_for_intervals(missing_intervals)
@@ -234,7 +240,9 @@ def _load_archive_file(
     by_time: dict[int, Bar] = {}
     try:
         with ZipFile(path) as archive:
-            csv_name = next((item for item in archive.namelist() if item.endswith(".csv")), None)
+            csv_name = next(
+                (item for item in archive.namelist() if item.endswith(".csv")), None
+            )
             if csv_name is None:
                 return []
             with archive.open(csv_name) as raw_file:
@@ -258,7 +266,9 @@ def _load_archive_file(
                         volume=float(row[5]),
                         time_close=open_time + duration - 1,
                     )
-                    by_time[open_time] = _merge_same_open_time(by_time.get(open_time), bar)
+                    by_time[open_time] = _merge_same_open_time(
+                        by_time.get(open_time), bar
+                    )
     except Exception:
         return []
     return [by_time[t] for t in sorted(by_time)]
@@ -309,10 +319,15 @@ def _missing_intervals(
     end: int,
     duration: int,
 ) -> tuple[tuple[int, int], ...]:
-    return tuple((ts, min(ts + duration, end)) for ts in _missing_starts(bars, start=start, end=end, duration=duration))
+    return tuple(
+        (ts, min(ts + duration, end))
+        for ts in _missing_starts(bars, start=start, end=end, duration=duration)
+    )
 
 
-def _coalesce_intervals(intervals: tuple[tuple[int, int], ...]) -> tuple[tuple[int, int], ...]:
+def _coalesce_intervals(
+    intervals: tuple[tuple[int, int], ...],
+) -> tuple[tuple[int, int], ...]:
     if not intervals:
         return ()
     ordered = sorted(intervals)
@@ -341,7 +356,9 @@ def _archive_covers_intervals(
     return bool(expected) and expected.issubset(delivered)
 
 
-def _days_for_intervals(intervals: tuple[tuple[int, int], ...]) -> tuple[tuple[int, int, int], ...]:
+def _days_for_intervals(
+    intervals: tuple[tuple[int, int], ...],
+) -> tuple[tuple[int, int, int], ...]:
     days: set[tuple[int, int, int]] = set()
     one_day_ms = 86_400_000
     for start, end in intervals:
@@ -354,11 +371,15 @@ def _days_for_intervals(intervals: tuple[tuple[int, int], ...]) -> tuple[tuple[i
     return tuple(sorted(days))
 
 
-def _months_for_intervals(intervals: tuple[tuple[int, int], ...]) -> tuple[tuple[int, int], ...]:
+def _months_for_intervals(
+    intervals: tuple[tuple[int, int], ...],
+) -> tuple[tuple[int, int], ...]:
     months: set[tuple[int, int]] = set()
     for start, end in intervals:
         cursor = datetime.fromtimestamp(start / 1000, timezone.utc).replace(day=1)
-        last = datetime.fromtimestamp(max(start, end - 1) / 1000, timezone.utc).replace(day=1)
+        last = datetime.fromtimestamp(max(start, end - 1) / 1000, timezone.utc).replace(
+            day=1
+        )
         while cursor <= last:
             months.add((cursor.year, cursor.month))
             year = cursor.year + (1 if cursor.month == 12 else 0)

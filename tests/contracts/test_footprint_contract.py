@@ -27,4 +27,3 @@ def test_footprint_query_requires_price_bucket_or_tick_size():
             start_ms=0,
             end_ms=60_000,
         )
-

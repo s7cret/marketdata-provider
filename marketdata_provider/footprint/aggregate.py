@@ -2,10 +2,17 @@ from __future__ import annotations
 
 import math
 
-from marketdata_provider.contracts.footprint import AggTrade, FootprintBar, FootprintLevel, FootprintQuery
+from marketdata_provider.contracts.footprint import (
+    AggTrade,
+    FootprintBar,
+    FootprintLevel,
+    FootprintQuery,
+)
 
 
-def aggregate_trades_to_footprint(trades: list[AggTrade], query: FootprintQuery) -> list[FootprintBar]:
+def aggregate_trades_to_footprint(
+    trades: list[AggTrade], query: FootprintQuery
+) -> list[FootprintBar]:
     duration = int(query.timeframe.duration_ms or 0)
     bucket_size = query.bucket_size
     buckets: dict[int, dict[float, list[float | int]]] = {}
@@ -38,6 +45,7 @@ def aggregate_trades_to_footprint(trades: list[AggTrade], query: FootprintQuery)
             )
             for price, values in sorted(buckets[bar_time].items())
         )
-        bars.append(FootprintBar(bar_time, bar_time + duration, levels, counts[bar_time]))
+        bars.append(
+            FootprintBar(bar_time, bar_time + duration, levels, counts[bar_time])
+        )
     return bars
-

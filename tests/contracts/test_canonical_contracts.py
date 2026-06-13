@@ -16,7 +16,9 @@ from marketdata_provider.contracts import (
 
 
 def test_instrument_key_normalizes_and_serializes() -> None:
-    instrument = InstrumentKey(exchange=" BINANCE ", market=" Spot ", symbol=" btcusdt ")
+    instrument = InstrumentKey(
+        exchange=" BINANCE ", market=" Spot ", symbol=" btcusdt "
+    )
 
     assert instrument.exchange == "binance"
     assert instrument.market == "spot"

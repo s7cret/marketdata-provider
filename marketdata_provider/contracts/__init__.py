@@ -10,9 +10,21 @@ from marketdata_provider.contracts.errors import (
     MarketDataContractError,
 )
 from marketdata_provider.contracts.events import LiveKlineEvent
-from marketdata_provider.contracts.footprint import AggTrade, FootprintBar, FootprintLevel, FootprintQuery, FootprintSeries
+from marketdata_provider.contracts.footprint import (
+    AggTrade,
+    FootprintBar,
+    FootprintLevel,
+    FootprintQuery,
+    FootprintSeries,
+)
 from marketdata_provider.contracts.instrument import InstrumentKey
-from marketdata_provider.contracts.protocols import CandleStore, FootprintProvider, LiveKlineClient, LiveKlineClientFactory, MarketDataProvider
+from marketdata_provider.contracts.protocols import (
+    CandleStore,
+    FootprintProvider,
+    LiveKlineClient,
+    LiveKlineClientFactory,
+    MarketDataProvider,
+)
 from marketdata_provider.contracts.query import BarQuery
 from marketdata_provider.contracts.series import BarSeries, CoverageReport, StoreResult
 from marketdata_provider.contracts.timeframe import Timeframe, parse_timeframe

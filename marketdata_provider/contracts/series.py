@@ -22,7 +22,11 @@ class CoverageReport:
 
     @property
     def is_complete(self) -> bool:
-        return self.status == "valid" and not self.missing_intervals and not self.duplicate_timestamps
+        return (
+            self.status == "valid"
+            and not self.missing_intervals
+            and not self.duplicate_timestamps
+        )
 
 
 @dataclass(frozen=True, slots=True)

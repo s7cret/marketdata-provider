@@ -37,7 +37,9 @@ class InstrumentKey:
     def parse(cls, value: str) -> "InstrumentKey":
         parts = value.split("/")
         if len(parts) != 3:
-            raise InvalidInstrumentError("instrument key must be exchange/market/symbol")
+            raise InvalidInstrumentError(
+                "instrument key must be exchange/market/symbol"
+            )
         return cls(parts[0], parts[1], parts[2])
 
     def __str__(self) -> str:

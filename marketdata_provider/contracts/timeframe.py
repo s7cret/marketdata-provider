@@ -47,4 +47,10 @@ def parse_timeframe(value: str) -> Timeframe:
         raise InvalidTimeframeError(f"unsupported canonical timeframe: {canonical}")
 
     duration_ms = None if unit == "month" else timeframe_ms(canonical)
-    return Timeframe(raw=raw, canonical=canonical, multiplier=multiplier, unit=unit, duration_ms=duration_ms)
+    return Timeframe(
+        raw=raw,
+        canonical=canonical,
+        multiplier=multiplier,
+        unit=unit,
+        duration_ms=duration_ms,
+    )
