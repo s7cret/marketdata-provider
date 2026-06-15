@@ -2,9 +2,8 @@
 
 > Normalized exchange market-data contracts, cache/storage workflows, archive adapters, and streaming helpers for OpenPine.
 
-![Version](https://img.shields.io/badge/version-4.0.0-blue)
-![Python](https://img.shields.io/badge/python-%3E%3D3.10-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+[![Version](https://img.shields.io/badge/version-4.0.0-blue)](https://github.com/s7cret/marketdata-provider) [![Python](https://img.shields.io/badge/python-%3E%3D3.10-blue)](https://github.com/s7cret/marketdata-provider) [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/s7cret/marketdata-provider)
+
 
 **GitHub description:** MarketData Provider normalizes OHLCV, footprint, cache, archive, and live-streaming data for OpenPine, with native Binance/Bybit adapters and explicit exchange capability metadata.
 
