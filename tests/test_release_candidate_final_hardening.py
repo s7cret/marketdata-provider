@@ -1009,7 +1009,7 @@ def test_segment_store_parquet_seek_and_service_helper_edges(
     monkeypatch.setattr(
         svc,
         "BinanceArchiveSource",
-        lambda config: types.SimpleNamespace(fetch=lambda query: [_mb(0)]),
+        lambda config: types.SimpleNamespace(fetch=lambda query, progress_callback=None: [_mb(0)]),
     )
     monkeypatch.setattr(
         svc,

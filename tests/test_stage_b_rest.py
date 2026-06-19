@@ -253,7 +253,7 @@ def test_marketdata_service_uses_base_1m_policy_and_materializes_derived_15m(
 ):
     calls = []
 
-    def fetch_from_source(self, query):
+    def fetch_from_source(self, query, progress_callback=None):
         calls.append(query)
         assert query.timeframe == parse_timeframe("1m")
         return _one_minute_bars()
@@ -285,7 +285,7 @@ def test_marketdata_service_materializes_15m_from_warm_1m_cache_without_source_f
         timeframe="1m",
     )
 
-    def fail_source_fetch(self, query):
+    def fail_source_fetch(self, query, progress_callback=None):
         raise AssertionError(
             f"source fetch should not run for warm base cache: {query}"
         )
@@ -327,7 +327,7 @@ def test_marketdata_service_streams_base_cache_for_derived_materialization(
     monkeypatch.setattr(
         MarketDataService,
         "_fetch_from_sources",
-        lambda self, query: (_ for _ in ()).throw(
+        lambda self, query, progress_callback=None: (_ for _ in ()).throw(
             AssertionError("source fetch should not run")
         ),
     )

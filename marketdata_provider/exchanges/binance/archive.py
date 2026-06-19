@@ -36,6 +36,7 @@ def fetch_binance_archive_bars(
     start: int,
     end: int,
     cache_dir: Path,
+    progress_callback=None,
 ) -> list[Bar]:
     """Fetch Binance archive klines for a closed historical range.
 
@@ -54,19 +55,27 @@ def fetch_binance_archive_bars(
     archive_root = Path(cache_dir) / "archives" / "binance_klines"
     intervals = ((start, end),)
     bars: list[Bar] = []
-    for year, month in _months_for_intervals(intervals):
-        bars.extend(
-            _load_archive_file(
-                symbol=symbol,
-                market=market,
-                timeframe=timeframe,
-                start=start,
-                end=end,
-                period="monthly",
-                suffix=f"{year:04d}-{month:02d}",
-                cache_dir=archive_root,
-            )
+    months_list = list(_months_for_intervals(intervals))
+    total_months = len(months_list)
+    for idx, (year, month) in enumerate(months_list):
+        file_bars = _load_archive_file(
+            symbol=symbol,
+            market=market,
+            timeframe=timeframe,
+            start=start,
+            end=end,
+            period="monthly",
+            suffix=f"{year:04d}-{month:02d}",
+            cache_dir=archive_root,
         )
+        bars.extend(file_bars)
+        if progress_callback is not None:
+            progress_callback(
+                bars_fetched=len(bars),
+                pages=idx + 1,
+                total_pages=total_months,
+                phase="archive_monthly",
+            )
     bars = _dedupe_sorted(bars)
     if _range_coverage_complete(bars, start=start, end=end, duration=duration):
         return bars
@@ -75,19 +84,27 @@ def fetch_binance_archive_bars(
         return bars
 
     daily_bars: list[Bar] = []
-    for year, month, day in _days_for_intervals(intervals):
-        daily_bars.extend(
-            _load_archive_file(
-                symbol=symbol,
-                market=market,
-                timeframe=timeframe,
-                start=start,
-                end=end,
-                period="daily",
-                suffix=f"{year:04d}-{month:02d}-{day:02d}",
-                cache_dir=archive_root,
-            )
+    days_list = list(_days_for_intervals(intervals))
+    total_days = len(days_list)
+    for idx, (year, month, day) in enumerate(days_list):
+        file_bars = _load_archive_file(
+            symbol=symbol,
+            market=market,
+            timeframe=timeframe,
+            start=start,
+            end=end,
+            period="daily",
+            suffix=f"{year:04d}-{month:02d}-{day:02d}",
+            cache_dir=archive_root,
         )
+        daily_bars.extend(file_bars)
+        if progress_callback is not None:
+            progress_callback(
+                bars_fetched=len(daily_bars),
+                pages=idx + 1,
+                total_pages=total_days,
+                phase="archive_daily",
+            )
     if _range_coverage_complete(daily_bars, start=start, end=end, duration=duration):
         return daily_bars
     return bars

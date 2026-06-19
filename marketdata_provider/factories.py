@@ -89,11 +89,11 @@ class _ExchangeProviderAdapter:
         self.config = config
         self.service = MarketDataService(config)
 
-    def fetch_bars(self, query: BarQuery) -> BarSeries:
+    def fetch_bars(self, query: BarQuery, progress_callback=None) -> BarSeries:
         exchange = (self.config.default_exchange or query.instrument.exchange).lower()
         if exchange not in _NATIVE_EXCHANGE_IDS:
             raise MDUnsupportedFeature(f"Unsupported provider exchange: {exchange}")
-        return self.service.fetch_bars(query)
+        return self.service.fetch_bars(query, progress_callback=progress_callback)
 
 
 class _OfflineProviderAdapter:

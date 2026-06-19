@@ -31,7 +31,7 @@ class BinanceArchiveSource:
     def __init__(self, config: MarketDataConfig):
         self.config = config
 
-    def fetch(self, query: BarQuery) -> list[MarketBar]:
+    def fetch(self, query: BarQuery, progress_callback=None) -> list[MarketBar]:
         if query.start_ms >= _archive_cutoff_ms(self.config):
             return []
         end = min(query.end_ms, _archive_cutoff_ms(self.config))
@@ -42,6 +42,7 @@ class BinanceArchiveSource:
             start=query.start_ms,
             end=end,
             cache_dir=self.config.storage.cache_dir,
+            progress_callback=progress_callback,
         )
         return [
             _market_bar_from_core(
@@ -132,13 +133,13 @@ class MarketDataService:
         self.config = config
         self.store = CandleStore(config.storage.cache_dir)
 
-    def fetch_bars(self, query: BarQuery) -> BarSeries:
+    def fetch_bars(self, query: BarQuery, progress_callback=None) -> BarSeries:
         base_query = self._base_query(query)
         if base_query.timeframe == query.timeframe:
             bars = self._stored_bars(base_query)
             if _coverage_complete(bars, query):
                 return series_from_market_bars(query, bars, source="storage")
-            self._ensure_stored(base_query)
+            self._ensure_stored(base_query, progress_callback=progress_callback)
             bars = self._stored_bars(base_query)
             return series_from_market_bars(query, bars, source="storage")
 
@@ -146,7 +147,7 @@ class MarketDataService:
         if _coverage_complete(derived, query):
             return series_from_market_bars(query, derived, source="storage")
 
-        base_changed = self._ensure_stored(base_query)
+        base_changed = self._ensure_stored(base_query, progress_callback=progress_callback)
         derived = self._stored_bars(query)
         if _coverage_complete(derived, query):
             return series_from_market_bars(query, derived, source="storage")
@@ -249,7 +250,7 @@ class MarketDataService:
             end=query.end_ms,
         )
 
-    def _ensure_stored(self, query: BarQuery) -> bool:
+    def _ensure_stored(self, query: BarQuery, progress_callback=None) -> bool:
         if self._stored_coverage_complete(query):
             return False
         manifest = self.store.segments.manifest_for(
@@ -269,7 +270,8 @@ class MarketDataService:
             missing_start = max(query.start_ms, manifest.end_time + duration)
             if missing_start < query.end_ms:
                 fetched_tail = self._fetch_from_sources(
-                    replace(query, start_ms=missing_start)
+                    replace(query, start_ms=missing_start),
+                    progress_callback=progress_callback,
                 )
                 if fetched_tail:
                     self._append_stream(query, fetched_tail)
@@ -277,7 +279,7 @@ class MarketDataService:
         current = self._stored_bars(query)
         if _coverage_complete(current, query):
             return False
-        fetched = self._fetch_from_sources(query)
+        fetched = self._fetch_from_sources(query, progress_callback=progress_callback)
         if not fetched:
             return False
         by_time = {bar.time: bar for bar in current}
@@ -372,10 +374,12 @@ class MarketDataService:
         )
         return _aggregate_market_bars(base_bars, query=query)
 
-    def _fetch_from_sources(self, query: BarQuery) -> list[MarketBar]:
+    def _fetch_from_sources(self, query: BarQuery, progress_callback=None) -> list[MarketBar]:
         if query.instrument.exchange == "binance":
             if self.config.history.archive_first:
-                archive = BinanceArchiveSource(self.config).fetch(query)
+                archive = BinanceArchiveSource(self.config).fetch(
+                    query, progress_callback=progress_callback
+                )
                 rest_query = _remaining_recent_query(query, archive, self.config)
                 if rest_query is None:
                     return archive
