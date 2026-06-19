@@ -135,13 +135,20 @@ class MarketDataService:
     def fetch_bars(self, query: BarQuery) -> BarSeries:
         base_query = self._base_query(query)
         if base_query.timeframe == query.timeframe:
+            bars = self._stored_bars(base_query)
+            if _coverage_complete(bars, query):
+                return series_from_market_bars(query, bars, source="storage")
             self._ensure_stored(base_query)
             bars = self._stored_bars(base_query)
             return series_from_market_bars(query, bars, source="storage")
 
+        derived = self._stored_bars(query)
+        if _coverage_complete(derived, query):
+            return series_from_market_bars(query, derived, source="storage")
+
         base_changed = self._ensure_stored(base_query)
         derived = self._stored_bars(query)
-        if not base_changed and _coverage_complete(derived, query):
+        if _coverage_complete(derived, query):
             return series_from_market_bars(query, derived, source="storage")
 
         derived = self._aggregate_stored_base(base_query, query)
@@ -175,6 +182,13 @@ class MarketDataService:
         """Ensure requested bars exist without returning the full series."""
 
         base_query = self._base_query(query)
+        if self._stored_coverage_complete(query):
+            return {
+                "ok": True,
+                "span_ok": self._stored_span_complete(query),
+                "changed": False,
+                "bars_returned": 0,
+            }
         if base_query.timeframe == query.timeframe:
             changed = self._ensure_stored(base_query)
             return {
@@ -184,6 +198,13 @@ class MarketDataService:
                 "bars_returned": 0,
             }
         base_changed = self._ensure_stored(base_query)
+        if self._stored_coverage_complete(query):
+            return {
+                "ok": True,
+                "span_ok": self._stored_span_complete(query),
+                "changed": base_changed,
+                "bars_returned": 0,
+            }
         if not base_changed and self._stored_span_complete(query):
             return {
                 "ok": self._stored_coverage_complete(query),

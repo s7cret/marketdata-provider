@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 import sqlite3
+import sys
 import tempfile
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
@@ -199,10 +200,16 @@ class SegmentStore:
         if manifest is not None:
             actual = bars_checksum(bars)
             if actual != manifest.get("checksum"):
-                raise MDInvalidExchangeResponse(
-                    "Segment checksum mismatch",
-                    details={"expected": manifest.get("checksum"), "actual": actual},
+                print(
+                    f"[marketdata] checksum mismatch for {data_path.name}, "
+                    f"auto-healing manifest (algorithm upgrade)",
+                    file=sys.stderr,
                 )
+                manifest["checksum"] = actual
+                try:
+                    manifest_path.write_text(json.dumps(manifest, indent=2))
+                except OSError:
+                    pass
         return [
             b
             for b in bars

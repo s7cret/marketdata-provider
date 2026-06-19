@@ -58,6 +58,15 @@ def test_parse_timeframe_matrix(
     assert parsed.duration_ms == duration_ms
 
 
+def test_parse_timeframe_semantic_equality_ignores_input_case() -> None:
+    lower = parse_timeframe("1d")
+    upper = parse_timeframe("1D")
+
+    assert lower == upper
+    assert hash(lower) == hash(upper)
+    assert lower.canonical == upper.canonical == "1D"
+
+
 def test_parse_timeframe_rejects_unknown_value() -> None:
     with pytest.raises(InvalidTimeframeError):
         parse_timeframe("coffee")

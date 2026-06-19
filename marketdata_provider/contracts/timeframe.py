@@ -10,13 +10,26 @@ from marketdata_provider.timeframes import canonical_timeframe, timeframe_ms
 TimeframeUnit = Literal["minute", "hour", "day", "week", "month"]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, eq=False)
 class Timeframe:
     raw: str
     canonical: str
     multiplier: int
     unit: TimeframeUnit
     duration_ms: int | None
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Timeframe):
+            return NotImplemented
+        return (
+            self.canonical == other.canonical
+            and self.multiplier == other.multiplier
+            and self.unit == other.unit
+            and self.duration_ms == other.duration_ms
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.canonical, self.multiplier, self.unit, self.duration_ms))
 
 
 def parse_timeframe(value: str) -> Timeframe:

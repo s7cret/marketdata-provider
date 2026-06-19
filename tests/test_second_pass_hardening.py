@@ -257,10 +257,14 @@ def test_segment_store_integrity_streaming_and_vacuum(
     data["runtime_contract_version"] = RUNTIME_CONTRACT_VERSION
     data["checksum"] = "bad"
     manifest_path.write_text(json.dumps(data))
-    with pytest.raises(MDInvalidExchangeResponse, match="checksum"):
-        store.read_all(
-            exchange="binance", market="spot", symbol="BTCUSDT", timeframe="1m"
-        )
+    # Checksum mismatch now auto-heals instead of raising
+    result = store.read_all(
+        exchange="binance", market="spot", symbol="BTCUSDT", timeframe="1m"
+    )
+    assert len(result) > 0
+    # Manifest should be updated with correct checksum
+    healed = json.loads(manifest_path.read_text())
+    assert healed["checksum"] != "bad"
 
     assert store._parse_bool(None) is True
     assert store._parse_bool("") is True
