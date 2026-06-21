@@ -8,6 +8,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+import time
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -118,6 +119,58 @@ class SegmentStore:
                 db.execute(
                     "ALTER TABLE marketdata_segments ADD COLUMN data_format TEXT NOT NULL DEFAULT 'csv'"
                 )
+
+    @staticmethod
+    def _delete_index_rows_for_series(
+        db: sqlite3.Connection,
+        manifest: SegmentManifest,
+    ) -> None:
+        """Keep the segment index aligned with the single physical data file.
+
+        The store path is keyed by exchange/market/symbol/timeframe/source_kind;
+        source_transport is metadata inside the file, not part of the path.  A
+        full replace therefore supersedes every previous row for that path.
+        """
+
+        db.execute(
+            "DELETE FROM marketdata_segments "
+            "WHERE exchange = ? AND market = ? AND symbol = ? AND timeframe = ? AND source_kind = ?",
+            (
+                manifest.exchange,
+                manifest.market,
+                manifest.symbol,
+                manifest.timeframe,
+                manifest.source_kind,
+            ),
+        )
+
+    @staticmethod
+    def _insert_index_row(
+        db: sqlite3.Connection,
+        manifest: SegmentManifest,
+        *,
+        downloaded_at: int,
+    ) -> None:
+        if not manifest.rows_count:
+            return
+        db.execute(
+            "INSERT INTO marketdata_segments(exchange,market,symbol,timeframe,start_time,end_time,rows_count,source_transport,source_kind,checksum,downloaded_at,data_format) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                manifest.exchange,
+                manifest.market,
+                manifest.symbol,
+                manifest.timeframe,
+                manifest.start_time,
+                manifest.end_time,
+                manifest.rows_count,
+                manifest.source_transport,
+                manifest.source_kind,
+                manifest.checksum,
+                downloaded_at,
+                manifest.data_format,
+            ),
+        )
 
     def _dir(
         self,
@@ -382,25 +435,12 @@ class SegmentStore:
         )
         with self._connect_index() as db:
             db.execute("PRAGMA journal_mode=WAL")
-            if bars:
-                db.execute(
-                    "INSERT OR REPLACE INTO marketdata_segments(exchange,market,symbol,timeframe,start_time,end_time,rows_count,source_transport,source_kind,checksum,downloaded_at,data_format) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (
-                        manifest.exchange,
-                        manifest.market,
-                        manifest.symbol,
-                        manifest.timeframe,
-                        manifest.start_time,
-                        manifest.end_time,
-                        manifest.rows_count,
-                        manifest.source_transport,
-                        manifest.source_kind,
-                        manifest.checksum,
-                        max((b.downloaded_at or 0) for b in bars),
-                        fmt,
-                    ),
-                )
+            self._delete_index_rows_for_series(db, manifest)
+            self._insert_index_row(
+                db,
+                manifest,
+                downloaded_at=max((b.downloaded_at or 0) for b in bars) if bars else 0,
+            )
         return manifest
 
     def replace_all_stream(
@@ -477,25 +517,8 @@ class SegmentStore:
         )
         with self._connect_index() as db:
             db.execute("PRAGMA journal_mode=WAL")
-            if rows_count:
-                db.execute(
-                    "INSERT OR REPLACE INTO marketdata_segments(exchange,market,symbol,timeframe,start_time,end_time,rows_count,source_transport,source_kind,checksum,downloaded_at,data_format) "
-                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (
-                        manifest.exchange,
-                        manifest.market,
-                        manifest.symbol,
-                        manifest.timeframe,
-                        manifest.start_time,
-                        manifest.end_time,
-                        manifest.rows_count,
-                        manifest.source_transport,
-                        manifest.source_kind,
-                        manifest.checksum,
-                        downloaded_at,
-                        "csv",
-                    ),
-                )
+            self._delete_index_rows_for_series(db, manifest)
+            self._insert_index_row(db, manifest, downloaded_at=downloaded_at)
         return manifest
 
     def upsert_closed(self, bar: MarketBar) -> SegmentManifest:
@@ -528,6 +551,15 @@ class SegmentStore:
             if path != expected:
                 path.unlink()
                 removed += 1
+        stale_before = time.time() - 3600
+        for pattern in ("v1/**/.bars.*", "v1/**/.manifest.json.*"):
+            for path in self.root.glob(pattern):
+                try:
+                    if path.is_file() and path.stat().st_mtime < stale_before:
+                        path.unlink()
+                        removed += 1
+                except FileNotFoundError:
+                    continue
         with self._connect_index() as db:
             db.execute("VACUUM")
         return {"removed_stale_data_files": removed}

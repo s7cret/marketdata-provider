@@ -1,5 +1,7 @@
 from pathlib import Path
 import importlib.util
+import os
+import sqlite3
 
 import pytest
 
@@ -108,6 +110,64 @@ def test_segment_store_parses_typed_bool_and_exposes_latest_time(tmp_path: Path)
         )
         == 60_000
     )
+
+
+def test_segment_store_replaces_index_row_for_single_physical_series(tmp_path: Path):
+    store = SegmentStore(tmp_path)
+
+    store.replace_all_stream(
+        [mb(0), mb(60_000)],
+        exchange="binance",
+        market="spot",
+        symbol="BTCUSDT",
+        timeframe="1m",
+    )
+    store.replace_all_stream(
+        [mb(0), mb(60_000), mb(120_000)],
+        exchange="binance",
+        market="spot",
+        symbol="BTCUSDT",
+        timeframe="1m",
+    )
+
+    with sqlite3.connect(tmp_path / "index.sqlite") as db:
+        count, summed_rows, max_rows = db.execute(
+            """
+            SELECT COUNT(*), SUM(rows_count), MAX(rows_count)
+            FROM marketdata_segments
+            WHERE exchange='binance' AND market='spot' AND symbol='BTCUSDT'
+              AND timeframe='1m' AND source_kind='trade_kline'
+            """
+        ).fetchone()
+
+    assert count == 1
+    assert summed_rows == 3
+    assert max_rows == 3
+
+
+def test_segment_store_vacuum_removes_stale_atomic_temp_files(tmp_path: Path):
+    store = SegmentStore(tmp_path)
+    store.replace_all(
+        [mb(0)], exchange="binance", market="spot", symbol="BTCUSDT", timeframe="1m"
+    )
+    directory = store._dir(
+        exchange="binance",
+        market="spot",
+        symbol="BTCUSDT",
+        timeframe="1m",
+        source_kind="trade_kline",
+    )
+    stale = directory / ".bars.csv.abandoned"
+    live = directory / ".bars.csv.live"
+    stale.write_text("partial", encoding="utf-8")
+    live.write_text("partial", encoding="utf-8")
+    os.utime(stale, (0, 0))
+
+    result = store.vacuum()
+
+    assert result["removed_stale_data_files"] >= 1
+    assert not stale.exists()
+    assert live.exists()
 
 
 def test_raw_store_plain_ndjson_manifest_checksum(tmp_path: Path):
