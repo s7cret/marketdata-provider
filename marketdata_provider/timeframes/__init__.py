@@ -128,7 +128,10 @@ def parse_time_ms(value: str | int) -> int:
         text = value.strip()
         if text.endswith("Z"):
             text = text[:-1] + "+00:00"
-        return int(datetime.fromisoformat(text).timestamp() * 1000)
+        parsed = datetime.fromisoformat(text)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return int(parsed.timestamp() * 1000)
     return raw if raw > 1_000_000_000_000 else raw * 1000
 
 

@@ -6,7 +6,6 @@ import importlib.util
 import json
 import os
 import sqlite3
-import sys
 import tempfile
 import time
 from contextlib import contextmanager
@@ -17,7 +16,11 @@ from typing import Iterable, Iterator, Literal, cast
 from marketdata_provider._pathing import safe_path_part
 from marketdata_provider.core.bar import MarketBar, RUNTIME_CONTRACT_VERSION
 from marketdata_provider.errors import MDInvalidExchangeResponse, MDUnsupportedFeature
-from marketdata_provider.store.segment_checksums import _update_checksum, bars_checksum
+from marketdata_provider.store.segment_checksums import (
+    _update_checksum,
+    bars_checksum,
+    validate_csv_checksum,
+)
 from marketdata_provider.store.segment_checksums import (
     market_bar_checksum as market_bar_checksum,
 )
@@ -241,6 +244,7 @@ class SegmentStore:
         if not data_path.exists():
             return list()
         if fmt == "csv" and (start is not None or end is not None):
+            validate_csv_checksum(data_path, manifest)
             bars = list(
                 self._iter_csv_range(data_path, start=start, end=end, manifest=manifest)
             )
@@ -255,16 +259,10 @@ class SegmentStore:
         if manifest is not None:
             actual = bars_checksum(bars)
             if actual != manifest.get("checksum"):
-                print(
-                    f"[marketdata] checksum mismatch for {data_path.name}, "
-                    f"auto-healing manifest (algorithm upgrade)",
-                    file=sys.stderr,
+                raise MDInvalidExchangeResponse(
+                    "Segment checksum mismatch",
+                    details={"expected": manifest.get("checksum"), "actual": actual},
                 )
-                manifest["checksum"] = actual
-                try:
-                    manifest_path.write_text(json.dumps(manifest, indent=2))
-                except OSError:
-                    pass
         return [
             b
             for b in bars
@@ -293,9 +291,17 @@ class SegmentStore:
             / "manifest.json"
         )
         fmt = self.data_format
+        manifest: dict[str, object] | None = None
         if manifest_path.exists():
-            manifest = json.loads(manifest_path.read_text())
-            fmt = manifest.get("data_format", fmt)
+            loaded_manifest = json.loads(manifest_path.read_text())
+            if not isinstance(loaded_manifest, dict):
+                raise MDInvalidExchangeResponse(
+                    "Segment manifest must be a JSON object"
+                )
+            manifest = cast(dict[str, object], loaded_manifest)
+            raw_format = manifest.get("data_format", fmt)
+            if raw_format in {"csv", "parquet"}:
+                fmt = cast(SegmentFormat, raw_format)
             self._validate_manifest_contract(manifest)
         data_path, _ = self._paths(
             exchange=exchange,
@@ -319,11 +325,13 @@ class SegmentStore:
             ):
                 yield bar
             return
+        range_manifest = manifest if manifest_path.exists() else None
+        validate_csv_checksum(data_path, range_manifest)
         yield from self._iter_csv_range(
             data_path,
             start=start,
             end=end,
-            manifest=manifest if manifest_path.exists() else None,
+            manifest=range_manifest,
         )
 
     def manifest_for(

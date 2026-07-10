@@ -220,9 +220,10 @@ def test_segment_manifest_heal_and_vacuum_race_edges(
 
     with monkeypatch.context() as scoped:
         scoped.setattr(Path, "write_text", fail_manifest_write)
-        assert store.read_all(
-            exchange="binance", market="spot", symbol="BTCUSDT", timeframe="1m"
-        ) == [bar]
+        with pytest.raises(MDInvalidExchangeResponse, match="checksum mismatch"):
+            store.read_all(
+                exchange="binance", market="spot", symbol="BTCUSDT", timeframe="1m"
+            )
 
     stale = tmp_path / "v1" / "race" / ".bars.csv.tmp"
     stale.parent.mkdir(parents=True, exist_ok=True)

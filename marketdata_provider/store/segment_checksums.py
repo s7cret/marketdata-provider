@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 import struct
 from decimal import Decimal
-from typing import Iterable
+from pathlib import Path
+from typing import Iterable, cast
 
 from marketdata_provider.core.bar import MarketBar
+from marketdata_provider.errors import MDInvalidExchangeResponse
+from marketdata_provider.store.segment_rows import row_to_bar
 from marketdata_provider.timeframes import canonical_timeframe
 
 
@@ -24,10 +28,25 @@ def market_bar_checksum(bar: MarketBar) -> str:
 
 
 def bars_checksum(bars: Iterable[MarketBar]) -> str:
-    h = hashlib.sha256()
-    for b in sorted(bars, key=lambda x: x.time):
-        _update_checksum(h, b)
-    return h.hexdigest()
+    digest = hashlib.sha256()
+    for bar in sorted(bars, key=lambda item: item.time):
+        _update_checksum(digest, bar)
+    return digest.hexdigest()
+
+
+def validate_csv_checksum(path: Path, manifest: dict[str, object] | None) -> None:
+    if manifest is None:
+        return
+    digest = hashlib.sha256()
+    with path.open(newline="") as handle:
+        for row in csv.DictReader(handle):
+            _update_checksum(digest, row_to_bar(cast(dict[str, object], row)))
+    actual = digest.hexdigest()
+    if actual != manifest.get("checksum"):
+        raise MDInvalidExchangeResponse(
+            "Segment checksum mismatch",
+            details={"expected": manifest.get("checksum"), "actual": actual},
+        )
 
 
 def _update_checksum(h: "hashlib._Hash", b: MarketBar) -> None:

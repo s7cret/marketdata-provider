@@ -429,11 +429,7 @@ def test_bybit_rate_limit_retcode(monkeypatch):
         )
 
 
-@pytest.mark.skipif(
-    __import__("os").getenv("RUN_MARKETDATA_NETWORK_TESTS") != "1",
-    reason="network tests disabled by default",
-)
-def test_network_smoke_binance_disabled_by_default():
+def test_network_smoke_binance_is_mandatory():
     bars = binance_provider.binance_get_bars_sync(
         "BINANCE:BTCUSDT", "1m", None, None, BinanceConfig(), market="spot", max_bars=2
     )

@@ -290,12 +290,9 @@ def test_cli_new_stage_d_commands(tmp_path: Path, capsys):
     assert "stage-d-raw-1" in capsys.readouterr().out
 
 
-@pytest.mark.skipif(
-    __import__("os").getenv("RUN_MARKETDATA_STREAM_TESTS") != "1",
-    reason="live public WS integration is env-gated",
-)
 @pytest.mark.asyncio
-async def test_live_ws_env_gated_smoke():
+async def test_live_ws_smoke_is_mandatory(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("MARKETDATA_ALLOW_STREAM", "1")
     client = PublicKlineWebSocketClient(
         exchange="binance", market="spot", symbol="BTCUSDT", timeframe="1m"
     )
