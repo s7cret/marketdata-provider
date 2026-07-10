@@ -7,7 +7,6 @@ from marketdata_provider.contracts import BarQuery, InstrumentKey, parse_timefra
 from marketdata_provider.exchanges.binance.provider import binance_get_bars_sync
 from marketdata_provider.service import MarketDataService
 
-
 pytestmark = pytest.mark.live_network
 
 
