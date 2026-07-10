@@ -129,9 +129,13 @@ _DERIVATIVE_MARKET_ALIASES = {
 }
 _MARGIN_MARKET_ALIASES = {"spot": "spot", "cash": "spot", "margin": "margin"}
 for _exchange in ("OKX", "KRAKEN", "KUCOIN", "BITGET", "GATEIO", "HTX"):
-    _MARKET_ALIASES[_exchange] = {**_MARGIN_MARKET_ALIASES, **_DERIVATIVE_MARKET_ALIASES}
+    _MARKET_ALIASES[_exchange] = {
+        **_MARGIN_MARKET_ALIASES,
+        **_DERIVATIVE_MARKET_ALIASES,
+    }
 _MARKET_ALIASES["COINBASE"] = {"spot": "spot", "cash": "spot"}
 _MARKET_ALIASES["MEXC"] = {"spot": "spot", "cash": "spot", **_DERIVATIVE_MARKET_ALIASES}
+
 
 def normalize_symbol(
     symbol: str, *, exchange: str | None = None, market: str | None = None
@@ -153,7 +157,9 @@ def normalize_symbol(
         raise MDSymbolUnsupported(f"Unsupported exchange: {ex}")
     is_perp = raw.endswith(".P")
     contract_symbol = raw[:-2] if is_perp else raw
-    requested_market = (market or "").strip().lower().replace(" ", "_").replace("-", "_")
+    requested_market = (
+        (market or "").strip().lower().replace(" ", "_").replace("-", "_")
+    )
     if requested_market:
         mkt = _provider_market(ex, requested_market)
     elif is_perp:
@@ -214,9 +220,16 @@ def filter_symbol_infos(
     q = query.strip().upper()
     out: list[SymbolInfo] = []
     for item in symbols:
-        if stable_quotes_only and item.quote_asset.upper() not in {a.upper() for a in stable_quote_assets}:
+        if stable_quotes_only and item.quote_asset.upper() not in {
+            a.upper() for a in stable_quote_assets
+        }:
             continue
-        if q and q not in item.symbol.upper() and q not in item.base_asset.upper() and q not in item.quote_asset.upper():
+        if (
+            q
+            and q not in item.symbol.upper()
+            and q not in item.base_asset.upper()
+            and q not in item.quote_asset.upper()
+        ):
             continue
         out.append(item)
         if limit is not None and len(out) >= limit:
@@ -267,10 +280,14 @@ def normalize_bybit_instruments_info_symbols(
     limit: int | None = None,
 ) -> list[SymbolInfo]:
     if not isinstance(payload, dict):
-        raise MDInvalidExchangeResponse("Bybit instruments-info payload must be an object")
+        raise MDInvalidExchangeResponse(
+            "Bybit instruments-info payload must be an object"
+        )
     rows = payload.get("result", {}).get("list")
     if not isinstance(rows, list):
-        raise MDInvalidExchangeResponse("Bybit instruments-info payload missing result.list")
+        raise MDInvalidExchangeResponse(
+            "Bybit instruments-info payload missing result.list"
+        )
     items: list[SymbolInfo] = []
     for row in rows:
         if not isinstance(row, dict) or row.get("status") != "Trading":
@@ -309,7 +326,7 @@ def _symbol_tuple(
     return symbol_text, base_text, quote_text
 
 
-from marketdata_provider.symbols.public_markets import (
+from marketdata_provider.symbols.public_markets import (  # noqa: E402
     _PUBLIC_SPOT_SYMBOL_ENDPOINTS,
     _QUERY_FIRST_PUBLIC_SPOT_EXCHANGES,
     _public_symbol_endpoint,
@@ -342,13 +359,23 @@ def _normalize_query_first_payload(
     exchange: str, symbol: str, base: str, quote: str, payload: Any
 ) -> list[SymbolInfo]:
     if exchange == "coinbase":
-        return normalize_public_spot_symbols(exchange, [payload], stable_quotes_only=False)
+        return normalize_public_spot_symbols(
+            exchange, [payload], stable_quotes_only=False
+        )
     if exchange == "kraken":
-        return normalize_public_spot_symbols(exchange, payload, stable_quotes_only=False)
+        return normalize_public_spot_symbols(
+            exchange, payload, stable_quotes_only=False
+        )
     if exchange == "gateio":
-        return normalize_public_spot_symbols(exchange, [payload], stable_quotes_only=False)
+        return normalize_public_spot_symbols(
+            exchange, [payload], stable_quotes_only=False
+        )
     if exchange == "htx":
-        if not isinstance(payload, dict) or payload.get("status") != "ok" or not payload.get("tick"):
+        if (
+            not isinstance(payload, dict)
+            or payload.get("status") != "ok"
+            or not payload.get("tick")
+        ):
             return []
         parsed = _symbol_tuple(symbol, base, quote)
         return [SymbolInfo(exchange, "spot", *parsed, active=True)] if parsed else []
@@ -364,7 +391,9 @@ def _query_first_url(exchange: str, symbol: str) -> tuple[str, dict[str, object]
         return f"https://api.gateio.ws/api/v4/spot/currency_pairs/{symbol}", {}
     if exchange == "htx":
         return "https://api.huobi.pro/market/detail/merged", {"symbol": symbol.lower()}
-    raise MDUnsupportedFeature(f"Query-first discovery unsupported for exchange: {exchange}")
+    raise MDUnsupportedFeature(
+        f"Query-first discovery unsupported for exchange: {exchange}"
+    )
 
 
 def _search_public_spot_symbols_by_query(
@@ -395,7 +424,9 @@ def _search_public_spot_symbols_by_query(
             )
         except MDNetworkUnavailable:
             continue
-        for item in _normalize_query_first_payload(exchange, symbol, base, quote.upper(), payload):
+        for item in _normalize_query_first_payload(
+            exchange, symbol, base, quote.upper(), payload
+        ):
             if item.symbol not in {existing.symbol for existing in items}:
                 items.append(item)
         if len(items) >= result_limit:
@@ -419,7 +450,11 @@ def search_symbols(
 
     cfg = config or MarketDataConfig()
     symbols_cfg = cfg.symbols
-    stable_only = symbols_cfg.stable_quotes_only if stable_quotes_only is None else stable_quotes_only
+    stable_only = (
+        symbols_cfg.stable_quotes_only
+        if stable_quotes_only is None
+        else stable_quotes_only
+    )
     quote_assets = stable_quote_assets or symbols_cfg.stable_quote_assets
     result_limit = limit if limit is not None else symbols_cfg.max_results
     ex = exchange.strip().lower()
@@ -433,7 +468,12 @@ def search_symbols(
             base_url, endpoint = cfg.binance.coinm_base_url, "/dapi/v1/exchangeInfo"
         else:
             raise MDUnsupportedFeature(f"Unsupported Binance symbol market: {market}")
-        payload = _http_get_json(base_url + endpoint, timeout=timeout, user_agent=cfg.binance.user_agent, httpx=httpx)
+        payload = _http_get_json(
+            base_url + endpoint,
+            timeout=timeout,
+            user_agent=cfg.binance.user_agent,
+            httpx=httpx,
+        )
         return normalize_binance_exchange_info_symbols(
             payload,
             market=provider_market,
@@ -461,7 +501,11 @@ def search_symbols(
         )
     if ex in _PUBLIC_SPOT_SYMBOL_ENDPOINTS:
         provider_market = _provider_market(ex.upper(), market)
-        if provider_market == "spot" and ex in _QUERY_FIRST_PUBLIC_SPOT_EXCHANGES and query:
+        if (
+            provider_market == "spot"
+            and ex in _QUERY_FIRST_PUBLIC_SPOT_EXCHANGES
+            and query
+        ):
             items = _search_public_spot_symbols_by_query(
                 ex,
                 query,
@@ -471,11 +515,6 @@ def search_symbols(
                 result_limit=result_limit,
                 httpx=httpx,
             )
-            if provider_market == "margin":
-                return [
-                    SymbolInfo(item.exchange, "margin", item.symbol, item.base_asset, item.quote_asset, item.active, item.contract_type)
-                    for item in items
-                ]
             return items
         url, params = _public_symbol_endpoint(ex, provider_market)
         payload = _http_get_json(
@@ -506,9 +545,13 @@ def _http_get_json(
     httpx: Any,
 ) -> Any:
     try:
-        with httpx.Client(timeout=timeout, headers={"User-Agent": user_agent}, trust_env=False) as client:
+        with httpx.Client(
+            timeout=timeout, headers={"User-Agent": user_agent}, trust_env=False
+        ) as client:
             response = client.get(url, params=params or {})
             response.raise_for_status()
             return response.json()
     except Exception as exc:  # pragma: no cover - exercised by integration callers.
-        raise MDNetworkUnavailable("Symbol discovery request failed", details={"url": url, "error": str(exc)}) from exc
+        raise MDNetworkUnavailable(
+            "Symbol discovery request failed", details={"url": url, "error": str(exc)}
+        ) from exc

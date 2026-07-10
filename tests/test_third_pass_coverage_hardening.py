@@ -389,7 +389,10 @@ def test_segment_store_integrity_and_private_helpers(tmp_path: Path) -> None:
         with pytest.raises(MDUnsupportedFeature):
             SegmentStore(tmp_path / "pq", data_format="parquet")
     else:
-        assert SegmentStore(tmp_path / "pq", data_format="parquet").data_format == "parquet"
+        assert (
+            SegmentStore(tmp_path / "pq", data_format="parquet").data_format
+            == "parquet"
+        )
 
     store = SegmentStore(tmp_path / "store")
     bars = [_mb(0, 1.0), _mb(60_000, 2.0), _mb(120_000, 3.0)]
@@ -514,9 +517,12 @@ def test_binance_agg_trades_edges(monkeypatch: pytest.MonkeyPatch) -> None:
     assert [trade.trade_id for trade in trades] == [1, 2]
     fake = FakeClient([FakeResponse(200, [])])
     monkeypatch.setattr(bt.httpx, "Client", lambda **_: fake)
-    assert bt.binance_get_agg_trades_sync(
-        "BTCUSDT", 0, 30, BinanceConfig(), market="coinm"
-    ) == []
+    assert (
+        bt.binance_get_agg_trades_sync(
+            "BTCUSDT", 0, 30, BinanceConfig(), market="coinm"
+        )
+        == []
+    )
 
 
 def test_cache_raw_store_and_distribution_edges(
@@ -601,7 +607,9 @@ def test_cache_raw_store_and_distribution_edges(
     with monkeypatch.context() as mp:
         mp.setattr(builtins, "__import__", fail_pyarrow_import)
         with pytest.raises(MDUnsupportedFeature, match="pyarrow"):
-            OfflineDataProvider(tmp_path / "offline.parquet").get_bars("BTCUSDT", "1m", None, None)
+            OfflineDataProvider(tmp_path / "offline.parquet").get_bars(
+                "BTCUSDT", "1m", None, None
+            )
     raw = RawStore(tmp_path / "raw")
     raw.write_batch(
         [{"a": 1}],

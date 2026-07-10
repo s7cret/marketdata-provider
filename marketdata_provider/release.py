@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import tomllib
 from dataclasses import asdict, dataclass
 from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10
+    import tomli as tomllib
 
 from marketdata_provider.distribution import distribution_manifest
 from marketdata_provider.quality import architecture_report, duplicate_report

@@ -35,7 +35,9 @@ def test_stable_quote_assets_are_configured_not_usdt_hardcoded():
 
 
 def test_normalize_symbol_accepts_configured_stable_quotes_and_inverse_markets():
-    assert normalize_symbol("BINANCE:BTCUSDC", market="spot").exchange_symbol == "BTCUSDC"
+    assert (
+        normalize_symbol("BINANCE:BTCUSDC", market="spot").exchange_symbol == "BTCUSDC"
+    )
     assert normalize_symbol("BINANCE:BTCUSD_PERP", market="coinm").market == "coinm"
     assert normalize_symbol("BYBIT:BTCUSD.P", market="inverse").market == "inverse"
 

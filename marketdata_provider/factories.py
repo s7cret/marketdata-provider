@@ -33,7 +33,6 @@ from marketdata_provider.service import MarketDataService
 from marketdata_provider.footprint.service import FootprintService
 from marketdata_provider.store.candle_store import CandleStore as SegmentCandleStore
 
-
 _NATIVE_EXCHANGE_IDS = {exchange.id for exchange in list_exchanges(native_only=True)}
 
 

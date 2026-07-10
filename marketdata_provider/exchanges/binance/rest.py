@@ -6,7 +6,11 @@ from marketdata_provider.errors import MDInvalidExchangeResponse
 from marketdata_provider.timeframes import close_time_ms, to_binance_interval
 from marketdata_provider.validation import exclude_open_candle, validate_bars
 
-BINANCE_ENDPOINTS = {"spot": "/api/v3/klines", "usdm": "/fapi/v1/klines", "coinm": "/dapi/v1/klines"}
+BINANCE_ENDPOINTS = {
+    "spot": "/api/v3/klines",
+    "usdm": "/fapi/v1/klines",
+    "coinm": "/dapi/v1/klines",
+}
 
 
 def normalize_binance_klines(

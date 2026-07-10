@@ -131,14 +131,12 @@ def test_segment_store_replaces_index_row_for_single_physical_series(tmp_path: P
     )
 
     with sqlite3.connect(tmp_path / "index.sqlite") as db:
-        count, summed_rows, max_rows = db.execute(
-            """
+        count, summed_rows, max_rows = db.execute("""
             SELECT COUNT(*), SUM(rows_count), MAX(rows_count)
             FROM marketdata_segments
             WHERE exchange='binance' AND market='spot' AND symbol='BTCUSDT'
               AND timeframe='1m' AND source_kind='trade_kline'
-            """
-        ).fetchone()
+            """).fetchone()
 
     assert count == 1
     assert summed_rows == 3
@@ -237,8 +235,12 @@ def test_segment_store_path_components_are_sanitized(tmp_path: Path):
     root = (tmp_path / "segments").resolve()
     assert data_path.resolve().is_relative_to(root)
     assert manifest_path.resolve().is_relative_to(root)
-    assert ".." not in data_path.relative_to(tmp_path / "segments").as_posix().split("/")
-    assert ".." not in manifest_path.relative_to(tmp_path / "segments").as_posix().split("/")
+    assert ".." not in data_path.relative_to(tmp_path / "segments").as_posix().split(
+        "/"
+    )
+    assert ".." not in manifest_path.relative_to(
+        tmp_path / "segments"
+    ).as_posix().split("/")
 
 
 def test_backpressure_coalesces_and_reports_drop():

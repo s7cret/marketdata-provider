@@ -175,7 +175,9 @@ def test_service_fetch_and_materialize_tail_append_and_unsupported(
     monkeypatch.setattr(
         MarketDataService,
         "_fetch_from_sources",
-        lambda self, q, progress_callback=None: [mb(120_000, close=3.0)] if q.start_ms == 120_000 else [],
+        lambda self, q, progress_callback=None: (
+            [mb(120_000, close=3.0)] if q.start_ms == 120_000 else []
+        ),
     )
     assert service._ensure_stored(base_q) is True
     assert [bar.time for bar in service._stored_bars(base_q)] == [0, 60_000, 120_000]
@@ -191,7 +193,11 @@ def test_service_derived_materialize_no_rows_and_month_coverage(
         history=HistoryConfig(enabled=True, archive_first=False, base_timeframe="1m"),
     )
     service = MarketDataService(cfg)
-    monkeypatch.setattr(MarketDataService, "_fetch_from_sources", lambda self, q, progress_callback=None: [])
+    monkeypatch.setattr(
+        MarketDataService,
+        "_fetch_from_sources",
+        lambda self, q, progress_callback=None: [],
+    )
     result = service.materialize_bars(query("15m", end=900_000))
     assert result["changed"] is False
     assert result["rows_written"] == 0

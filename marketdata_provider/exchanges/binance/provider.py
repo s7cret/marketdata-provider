@@ -83,7 +83,11 @@ def _get_json(
 def _server_time_ms(
     client: httpx.Client, base_url: str, market: str, *, max_retries: int
 ) -> int:
-    endpoint = "/api/v3/time" if market == "spot" else ("/dapi/v1/time" if market == "coinm" else "/fapi/v1/time")
+    endpoint = (
+        "/api/v3/time"
+        if market == "spot"
+        else ("/dapi/v1/time" if market == "coinm" else "/fapi/v1/time")
+    )
     payload = _get_json(client, base_url + endpoint, {}, max_retries=max_retries)
     try:
         return int(payload["serverTime"])

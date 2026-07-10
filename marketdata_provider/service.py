@@ -99,21 +99,26 @@ class PublicMarketRestSource:
         self.config = config
 
     def fetch(self, query: BarQuery) -> list[MarketBar]:
-        fetch_kwargs = {
-            "exchange": query.instrument.exchange,
-            "symbol": query.instrument.symbol,
-            "timeframe": query.timeframe.canonical,
-            "start": query.start_ms,
-            "end": query.end_ms,
-            "user_agent": self.config.binance.user_agent,
-            "include_open_candle": self.config.include_open_candle,
-        }
         if query.instrument.market == "spot":
-            bars = public_spot_get_bars_sync(**fetch_kwargs)
+            bars = public_spot_get_bars_sync(
+                exchange=query.instrument.exchange,
+                symbol=query.instrument.symbol,
+                timeframe=query.timeframe.canonical,
+                start=query.start_ms,
+                end=query.end_ms,
+                user_agent=self.config.binance.user_agent,
+                include_open_candle=self.config.include_open_candle,
+            )
         else:
             bars = public_market_get_bars_sync(
+                exchange=query.instrument.exchange,
                 market=query.instrument.market,
-                **fetch_kwargs,
+                symbol=query.instrument.symbol,
+                timeframe=query.timeframe.canonical,
+                start=query.start_ms,
+                end=query.end_ms,
+                user_agent=self.config.binance.user_agent,
+                include_open_candle=self.config.include_open_candle,
             )
         return [
             _market_bar_from_core(bar, query=query, source_transport="rest")
@@ -147,7 +152,7 @@ class MarketDataService:
         if _coverage_complete(derived, query):
             return series_from_market_bars(query, derived, source="storage")
 
-        base_changed = self._ensure_stored(base_query, progress_callback=progress_callback)
+        self._ensure_stored(base_query, progress_callback=progress_callback)
         derived = self._stored_bars(query)
         if _coverage_complete(derived, query):
             return series_from_market_bars(query, derived, source="storage")
@@ -374,7 +379,9 @@ class MarketDataService:
         )
         return _aggregate_market_bars(base_bars, query=query)
 
-    def _fetch_from_sources(self, query: BarQuery, progress_callback=None) -> list[MarketBar]:
+    def _fetch_from_sources(
+        self, query: BarQuery, progress_callback=None
+    ) -> list[MarketBar]:
         if query.instrument.exchange == "binance":
             if self.config.history.archive_first:
                 archive = BinanceArchiveSource(self.config).fetch(

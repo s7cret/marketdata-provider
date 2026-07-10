@@ -10,31 +10,84 @@ from marketdata_provider.symbols import (
 
 def test_filter_symbol_infos_defaults_to_stable_quotes():
     symbols = [
-        SymbolInfo(exchange="binance", market="spot", symbol="BTCUSDT", base_asset="BTC", quote_asset="USDT"),
-        SymbolInfo(exchange="binance", market="spot", symbol="ETHBTC", base_asset="ETH", quote_asset="BTC"),
-        SymbolInfo(exchange="binance", market="spot", symbol="SOLUSDC", base_asset="SOL", quote_asset="USDC"),
-        SymbolInfo(exchange="binance", market="coinm", symbol="BTCUSD_PERP", base_asset="BTC", quote_asset="USD"),
+        SymbolInfo(
+            exchange="binance",
+            market="spot",
+            symbol="BTCUSDT",
+            base_asset="BTC",
+            quote_asset="USDT",
+        ),
+        SymbolInfo(
+            exchange="binance",
+            market="spot",
+            symbol="ETHBTC",
+            base_asset="ETH",
+            quote_asset="BTC",
+        ),
+        SymbolInfo(
+            exchange="binance",
+            market="spot",
+            symbol="SOLUSDC",
+            base_asset="SOL",
+            quote_asset="USDC",
+        ),
+        SymbolInfo(
+            exchange="binance",
+            market="coinm",
+            symbol="BTCUSD_PERP",
+            base_asset="BTC",
+            quote_asset="USD",
+        ),
     ]
 
     stable = filter_symbol_infos(symbols)
     assert [item.symbol for item in stable] == ["BTCUSDT", "SOLUSDC", "BTCUSD_PERP"]
-    assert [item.symbol for item in filter_symbol_infos(symbols, stable_quotes_only=False)] == [
+    assert [
+        item.symbol for item in filter_symbol_infos(symbols, stable_quotes_only=False)
+    ] == [
         "BTCUSDT",
         "ETHBTC",
         "SOLUSDC",
         "BTCUSD_PERP",
     ]
-    assert [item.symbol for item in filter_symbol_infos(symbols, query="sol")] == ["SOLUSDC"]
+    assert [item.symbol for item in filter_symbol_infos(symbols, query="sol")] == [
+        "SOLUSDC"
+    ]
 
 
 def test_normalize_binance_exchange_info_symbols_respects_default_stable_filter():
     payload = {
         "symbols": [
-            {"symbol": "BTCUSDT", "status": "TRADING", "baseAsset": "BTC", "quoteAsset": "USDT"},
-            {"symbol": "ETHBTC", "status": "TRADING", "baseAsset": "ETH", "quoteAsset": "BTC"},
-            {"symbol": "SOLUSDC", "status": "TRADING", "baseAsset": "SOL", "quoteAsset": "USDC"},
-            {"symbol": "DELISTEDUSDT", "status": "BREAK", "baseAsset": "DELISTED", "quoteAsset": "USDT"},
-            {"symbol": "BTCUSD_PERP", "contractStatus": "TRADING", "baseAsset": "BTC", "quoteAsset": "USD"},
+            {
+                "symbol": "BTCUSDT",
+                "status": "TRADING",
+                "baseAsset": "BTC",
+                "quoteAsset": "USDT",
+            },
+            {
+                "symbol": "ETHBTC",
+                "status": "TRADING",
+                "baseAsset": "ETH",
+                "quoteAsset": "BTC",
+            },
+            {
+                "symbol": "SOLUSDC",
+                "status": "TRADING",
+                "baseAsset": "SOL",
+                "quoteAsset": "USDC",
+            },
+            {
+                "symbol": "DELISTEDUSDT",
+                "status": "BREAK",
+                "baseAsset": "DELISTED",
+                "quoteAsset": "USDT",
+            },
+            {
+                "symbol": "BTCUSD_PERP",
+                "contractStatus": "TRADING",
+                "baseAsset": "BTC",
+                "quoteAsset": "USD",
+            },
         ]
     }
 
@@ -50,10 +103,30 @@ def test_normalize_bybit_instruments_info_symbols_respects_default_stable_filter
     payload = {
         "result": {
             "list": [
-                {"symbol": "BTCUSDT", "status": "Trading", "baseCoin": "BTC", "quoteCoin": "USDT"},
-                {"symbol": "ETHBTC", "status": "Trading", "baseCoin": "ETH", "quoteCoin": "BTC"},
-                {"symbol": "BTCUSD", "status": "Trading", "baseCoin": "BTC", "quoteCoin": "USD"},
-                {"symbol": "OLDUSDT", "status": "Settled", "baseCoin": "OLD", "quoteCoin": "USDT"},
+                {
+                    "symbol": "BTCUSDT",
+                    "status": "Trading",
+                    "baseCoin": "BTC",
+                    "quoteCoin": "USDT",
+                },
+                {
+                    "symbol": "ETHBTC",
+                    "status": "Trading",
+                    "baseCoin": "ETH",
+                    "quoteCoin": "BTC",
+                },
+                {
+                    "symbol": "BTCUSD",
+                    "status": "Trading",
+                    "baseCoin": "BTC",
+                    "quoteCoin": "USD",
+                },
+                {
+                    "symbol": "OLDUSDT",
+                    "status": "Settled",
+                    "baseCoin": "OLD",
+                    "quoteCoin": "USDT",
+                },
             ]
         }
     }
@@ -113,9 +186,15 @@ def test_symbol_edge_cases_and_search_symbols_without_network(monkeypatch):
     )
     from marketdata_provider.exchanges.binance.provider import _base_url
     from marketdata_provider.exchanges.bybit.provider import _category
-    from marketdata_provider.symbols import normalize_symbol, quote_asset, search_symbols
+    from marketdata_provider.symbols import (
+        normalize_symbol,
+        quote_asset,
+        search_symbols,
+    )
 
-    info = SymbolInfo("binance", "spot", "BTCUSDT", "BTC", "USDT", contract_type="PERPETUAL")
+    info = SymbolInfo(
+        "binance", "spot", "BTCUSDT", "BTC", "USDT", contract_type="PERPETUAL"
+    )
     assert info.to_dict()["contract_type"] == "PERPETUAL"
     assert quote_asset("BINANCE:BTCUSDT.P") == "USDT"
     with pytest.raises(MDSymbolAmbiguous):
@@ -134,25 +213,89 @@ def test_symbol_edge_cases_and_search_symbols_without_network(monkeypatch):
     assert [item.symbol for item in filter_symbol_infos(rows, limit=1)] == ["BTCUSDT"]
     with pytest.raises(MDInvalidExchangeResponse):
         normalize_binance_exchange_info_symbols({"symbols": "bad"}, market="spot")
-    assert normalize_binance_exchange_info_symbols(
-        {"symbols": [object(), {"symbol": "", "status": "TRADING"}]}, market="spot"
-    ) == []
+    assert (
+        normalize_binance_exchange_info_symbols(
+            {"symbols": [object(), {"symbol": "", "status": "TRADING"}]}, market="spot"
+        )
+        == []
+    )
     with pytest.raises(MDInvalidExchangeResponse):
         normalize_bybit_instruments_info_symbols([], market="spot")
     with pytest.raises(MDInvalidExchangeResponse):
         normalize_bybit_instruments_info_symbols({"result": {}}, market="spot")
-    assert normalize_bybit_instruments_info_symbols(
-        {"result": {"list": [object(), {"symbol": "", "status": "Trading"}]}}, market="spot"
-    ) == []
+    assert (
+        normalize_bybit_instruments_info_symbols(
+            {"result": {"list": [object(), {"symbol": "", "status": "Trading"}]}},
+            market="spot",
+        )
+        == []
+    )
 
     _FakeClient.calls = []
     _FakeClient.payloads = [
-        {"symbols": [{"symbol": "BTCUSDT", "status": "TRADING", "baseAsset": "BTC", "quoteAsset": "USDT"}]},
-        {"symbols": [{"symbol": "ETHUSDT", "status": "TRADING", "baseAsset": "ETH", "quoteAsset": "USDT"}]},
-        {"symbols": [{"symbol": "BTCUSD_PERP", "contractStatus": "TRADING", "baseAsset": "BTC", "quoteAsset": "USD"}]},
-        {"result": {"list": [{"symbol": "BTCUSDT", "status": "Trading", "baseCoin": "BTC", "quoteCoin": "USDT"}]}},
-        {"data": [{"instId": "BTC-USDT", "state": "live", "baseCcy": "BTC", "quoteCcy": "USDT"}]},
-        {"data": [{"instId": "BTC-USDT-SWAP", "state": "live", "baseCcy": "BTC", "quoteCcy": "USDT", "ctType": "linear"}]},
+        {
+            "symbols": [
+                {
+                    "symbol": "BTCUSDT",
+                    "status": "TRADING",
+                    "baseAsset": "BTC",
+                    "quoteAsset": "USDT",
+                }
+            ]
+        },
+        {
+            "symbols": [
+                {
+                    "symbol": "ETHUSDT",
+                    "status": "TRADING",
+                    "baseAsset": "ETH",
+                    "quoteAsset": "USDT",
+                }
+            ]
+        },
+        {
+            "symbols": [
+                {
+                    "symbol": "BTCUSD_PERP",
+                    "contractStatus": "TRADING",
+                    "baseAsset": "BTC",
+                    "quoteAsset": "USD",
+                }
+            ]
+        },
+        {
+            "result": {
+                "list": [
+                    {
+                        "symbol": "BTCUSDT",
+                        "status": "Trading",
+                        "baseCoin": "BTC",
+                        "quoteCoin": "USDT",
+                    }
+                ]
+            }
+        },
+        {
+            "data": [
+                {
+                    "instId": "BTC-USDT",
+                    "state": "live",
+                    "baseCcy": "BTC",
+                    "quoteCcy": "USDT",
+                }
+            ]
+        },
+        {
+            "data": [
+                {
+                    "instId": "BTC-USDT-SWAP",
+                    "state": "live",
+                    "baseCcy": "BTC",
+                    "quoteCcy": "USDT",
+                    "ctType": "linear",
+                }
+            ]
+        },
     ]
     monkeypatch.setitem(__import__("sys").modules, "httpx", _FakeHttpx)
 
@@ -173,6 +316,8 @@ def test_symbol_edge_cases_and_search_symbols_without_network(monkeypatch):
 
     import marketdata_provider.symbols as symbols_mod
 
-    monkeypatch.setattr(symbols_mod, "_provider_market", lambda exchange, market: "options")
+    monkeypatch.setattr(
+        symbols_mod, "_provider_market", lambda exchange, market: "options"
+    )
     with pytest.raises(MDUnsupportedFeature):
         search_symbols("binance", "spot")

@@ -7,7 +7,26 @@ from typing import Any, TypeAlias
 import httpx
 
 from marketdata_provider.core.bar import Bar
-from marketdata_provider.errors import MDInvalidExchangeResponse, MDNetworkUnavailable, MDSymbolUnsupported
+from marketdata_provider.errors import (
+    MDInvalidExchangeResponse,
+    MDNetworkUnavailable,
+    MDSymbolUnsupported,
+)
+from marketdata_provider.exchanges.public_intervals import (
+    _bitget_granularity,
+    _bitget_mix_granularity,
+    _coinbase_granularity,
+    _gate_interval,
+    _gate_settlement,
+    _htx_period,
+    _kraken_futures_interval,
+    _kucoin_type,
+    _mexc_contract_interval,
+    _mexc_interval,
+    _minutes,
+    _okx_bar,
+    _requested_limit,
+)
 from marketdata_provider.timeframes import close_time_ms
 from marketdata_provider.validation import validate_bars
 
@@ -122,7 +141,9 @@ def public_market_get_bars_sync(
         user_agent=user_agent,
         max_retries=max_retries,
     )
-    bars = _normalize_market_klines(ex, provider_market, payload, symbol=symbol, timeframe=timeframe)
+    bars = _normalize_market_klines(
+        ex, provider_market, payload, symbol=symbol, timeframe=timeframe
+    )
     filtered = [
         bar
         for bar in bars
@@ -149,7 +170,9 @@ def _http_get_json(
     max_retries: int,
 ) -> Any:
     last: Exception | None = None
-    with httpx.Client(timeout=timeout, headers={"User-Agent": user_agent}, trust_env=False) as client:
+    with httpx.Client(
+        timeout=timeout, headers={"User-Agent": user_agent}, trust_env=False
+    ) as client:
         for attempt in range(max_retries + 1):
             try:
                 response = client.get(url, params=params)
@@ -157,7 +180,11 @@ def _http_get_json(
                     if attempt >= max_retries:
                         raise MDNetworkUnavailable(
                             "Public spot rate limit exceeded",
-                            details={"status": response.status_code, "url": url, "params": params},
+                            details={
+                                "status": response.status_code,
+                                "url": url,
+                                "params": params,
+                            },
                         )
                     time.sleep(min(2.0, 0.25 * (2**attempt)))
                     continue
@@ -176,7 +203,11 @@ def _http_get_json(
                 time.sleep(min(2.0, 0.25 * (2**attempt)))
     raise MDNetworkUnavailable(
         "Public spot HTTP request failed",
-        details={"url": url, "params": params, "error": str(last) if last else "unknown"},
+        details={
+            "url": url,
+            "params": params,
+            "error": str(last) if last else "unknown",
+        },
     )
 
 
@@ -184,7 +215,11 @@ def _spot_request(
     exchange: str, symbol: str, timeframe: str, start: int | None, end: int | None
 ) -> tuple[str, _QueryParams]:
     if exchange == "okx":
-        params: _QueryParams = {"instId": symbol.upper(), "bar": _okx_bar(timeframe), "limit": 300}
+        params: _QueryParams = {
+            "instId": symbol.upper(),
+            "bar": _okx_bar(timeframe),
+            "limit": 300,
+        }
         if end is not None:
             params["after"] = end
         return "https://www.okx.com/api/v5/market/candles", params
@@ -194,7 +229,10 @@ def _spot_request(
             params["start"] = _iso_ms(start)
         if end is not None:
             params["end"] = _iso_ms(end)
-        return f"https://api.exchange.coinbase.com/products/{symbol.upper()}/candles", params
+        return (
+            f"https://api.exchange.coinbase.com/products/{symbol.upper()}/candles",
+            params,
+        )
     if exchange == "kraken":
         params = {"pair": symbol.upper(), "interval": _minutes(timeframe)}
         if start is not None:
@@ -208,14 +246,22 @@ def _spot_request(
             params["endAt"] = end // 1000
         return "https://api.kucoin.com/api/v1/market/candles", params
     if exchange == "bitget":
-        params = {"symbol": symbol.upper(), "granularity": _bitget_granularity(timeframe), "limit": 1000}
+        params = {
+            "symbol": symbol.upper(),
+            "granularity": _bitget_granularity(timeframe),
+            "limit": 1000,
+        }
         if start is not None:
             params["startTime"] = start
         if end is not None:
             params["endTime"] = end
         return "https://api.bitget.com/api/v2/spot/market/candles", params
     if exchange == "gateio":
-        params = {"currency_pair": symbol.upper(), "interval": _gate_interval(timeframe), "limit": 1000}
+        params = {
+            "currency_pair": symbol.upper(),
+            "interval": _gate_interval(timeframe),
+            "limit": 1000,
+        }
         if start is not None:
             params["from"] = start // 1000
         if end is not None:
@@ -231,7 +277,11 @@ def _spot_request(
             },
         )
     if exchange == "mexc":
-        params = {"symbol": symbol.upper(), "interval": _mexc_interval(timeframe), "limit": 1000}
+        params = {
+            "symbol": symbol.upper(),
+            "interval": _mexc_interval(timeframe),
+            "limit": 1000,
+        }
         if start is not None:
             params["startTime"] = start
         if end is not None:
@@ -256,7 +306,10 @@ def _market_request(
             params["from"] = start // 1000
         if end is not None:
             params["to"] = end // 1000
-        return f"https://futures.kraken.com/api/charts/v1/trade/{symbol.upper()}/{_kraken_futures_interval(timeframe)}", params
+        return (
+            f"https://futures.kraken.com/api/charts/v1/trade/{symbol.upper()}/{_kraken_futures_interval(timeframe)}",
+            params,
+        )
     if exchange == "kucoin":
         params = {"symbol": symbol.upper(), "granularity": _minutes(timeframe)}
         if start is not None:
@@ -279,12 +332,19 @@ def _market_request(
     if exchange == "gateio":
         settlement = _gate_settlement(symbol, market)
         namespace = "delivery" if market == "delivery_futures" else "futures"
-        params = {"contract": symbol.upper(), "interval": _gate_interval(timeframe), "limit": 1000}
+        params = {
+            "contract": symbol.upper(),
+            "interval": _gate_interval(timeframe),
+            "limit": 1000,
+        }
         if start is not None:
             params["from"] = start // 1000
         if end is not None:
             params["to"] = end // 1000
-        return f"https://api.gateio.ws/api/v4/{namespace}/{settlement}/candlesticks", params
+        return (
+            f"https://api.gateio.ws/api/v4/{namespace}/{settlement}/candlesticks",
+            params,
+        )
     if exchange == "htx":
         if market == "linear":
             url = "https://api.hbdm.com/linear-swap-ex/market/history/kline"
@@ -303,7 +363,10 @@ def _market_request(
             params["start"] = start // 1000
         if end is not None:
             params["end"] = end // 1000
-        return f"https://contract.mexc.com/api/v1/contract/kline/{symbol.upper()}", params
+        return (
+            f"https://contract.mexc.com/api/v1/contract/kline/{symbol.upper()}",
+            params,
+        )
     raise MDSymbolUnsupported(f"Unsupported public market exchange: {exchange}")
 
 
@@ -319,7 +382,9 @@ def _normalize_spot_klines(
             bars.append(bar)
     bars.sort(key=lambda bar: bar.time)
     return [
-        Bar(bar.time, bar.open, bar.high, bar.low, bar.close, bar.volume, bar.time_close)
+        Bar(
+            bar.time, bar.open, bar.high, bar.low, bar.close, bar.volume, bar.time_close
+        )
         for bar in bars
     ]
 
@@ -336,7 +401,9 @@ def _normalize_market_klines(
             bars.append(bar)
     bars.sort(key=lambda bar: bar.time)
     return [
-        Bar(bar.time, bar.open, bar.high, bar.low, bar.close, bar.volume, bar.time_close)
+        Bar(
+            bar.time, bar.open, bar.high, bar.low, bar.close, bar.volume, bar.time_close
+        )
         for bar in bars
     ]
 
@@ -385,7 +452,11 @@ def _extract_rows(exchange: str, payload: Any) -> list[Any]:
         rows = payload.get("data") if isinstance(payload, dict) else None
     elif exchange == "kraken":
         result = payload.get("result", {}) if isinstance(payload, dict) else {}
-        rows = next((value for key, value in result.items() if key != "last"), []) if isinstance(result, dict) else []
+        rows = (
+            next((value for key, value in result.items() if key != "last"), [])
+            if isinstance(result, dict)
+            else []
+        )
     elif exchange == "kucoin":
         rows = payload.get("data") if isinstance(payload, dict) else None
     elif exchange == "bitget":
@@ -406,18 +477,32 @@ def _row_to_bar(exchange: str, row: Any, *, timeframe: str) -> Bar | None:
         if exchange == "okx":
             return _bar_ms(row[0], row[1], row[2], row[3], row[4], row[5], timeframe)
         if exchange == "coinbase":
-            return _bar_seconds(row[0], row[3], row[2], row[1], row[4], row[5], timeframe)
+            return _bar_seconds(
+                row[0], row[3], row[2], row[1], row[4], row[5], timeframe
+            )
         if exchange == "kraken":
-            return _bar_seconds(row[0], row[1], row[2], row[3], row[4], row[6], timeframe)
+            return _bar_seconds(
+                row[0], row[1], row[2], row[3], row[4], row[6], timeframe
+            )
         if exchange == "kucoin":
-            return _bar_seconds(row[0], row[1], row[3], row[4], row[2], row[5], timeframe)
+            return _bar_seconds(
+                row[0], row[1], row[3], row[4], row[2], row[5], timeframe
+            )
         if exchange == "bitget":
             return _bar_ms(row[0], row[1], row[2], row[3], row[4], row[5], timeframe)
         if exchange == "gateio":
-            return _bar_seconds(row[0], row[5], row[3], row[4], row[2], row[1], timeframe)
+            return _bar_seconds(
+                row[0], row[5], row[3], row[4], row[2], row[1], timeframe
+            )
         if exchange == "htx":
             return _bar_seconds(
-                row["id"], row["open"], row["high"], row["low"], row["close"], row["amount"], timeframe
+                row["id"],
+                row["open"],
+                row["high"],
+                row["low"],
+                row["close"],
+                row["amount"],
+                timeframe,
             )
         if exchange == "mexc":
             return _bar_ms(row[0], row[1], row[2], row[3], row[4], row[5], timeframe)
@@ -433,22 +518,54 @@ def _row_to_market_bar(exchange: str, row: Any, *, timeframe: str) -> Bar | None
         if exchange == "okx":
             return _bar_ms(row[0], row[1], row[2], row[3], row[4], row[5], timeframe)
         if exchange == "kraken":
-            return _bar_epoch(row["time"], row["open"], row["high"], row["low"], row["close"], row["volume"], timeframe)
+            return _bar_epoch(
+                row["time"],
+                row["open"],
+                row["high"],
+                row["low"],
+                row["close"],
+                row["volume"],
+                timeframe,
+            )
         if exchange == "kucoin":
             return _bar_epoch(row[0], row[1], row[2], row[3], row[4], row[5], timeframe)
         if exchange == "bitget":
             return _bar_ms(row[0], row[1], row[2], row[3], row[4], row[5], timeframe)
         if exchange == "gateio":
             if isinstance(row, dict):
-                return _bar_seconds(row["t"], row["o"], row["h"], row["l"], row["c"], row["v"], timeframe)
-            return _bar_seconds(row[0], row[5], row[3], row[4], row[2], row[1], timeframe)
+                return _bar_seconds(
+                    row["t"],
+                    row["o"],
+                    row["h"],
+                    row["l"],
+                    row["c"],
+                    row["v"],
+                    timeframe,
+                )
+            return _bar_seconds(
+                row[0], row[5], row[3], row[4], row[2], row[1], timeframe
+            )
         if exchange == "htx":
             return _bar_seconds(
-                row["id"], row["open"], row["high"], row["low"], row["close"], row["amount"], timeframe
+                row["id"],
+                row["open"],
+                row["high"],
+                row["low"],
+                row["close"],
+                row["amount"],
+                timeframe,
             )
         if exchange == "mexc":
             if isinstance(row, dict):
-                return _bar_epoch(row["time"], row["open"], row["high"], row["low"], row["close"], row["vol"], timeframe)
+                return _bar_epoch(
+                    row["time"],
+                    row["open"],
+                    row["high"],
+                    row["low"],
+                    row["close"],
+                    row["vol"],
+                    timeframe,
+                )
             return _bar_epoch(row[0], row[1], row[2], row[3], row[4], row[5], timeframe)
     except (KeyError, IndexError, TypeError, ValueError) as exc:
         raise MDInvalidExchangeResponse(
@@ -487,7 +604,9 @@ def _bar_seconds(
     volume: object,
     timeframe: str,
 ) -> Bar:
-    return _bar_ms(int(str(open_time)) * 1000, open_, high, low, close, volume, timeframe)
+    return _bar_ms(
+        int(str(open_time)) * 1000, open_, high, low, close, volume, timeframe
+    )
 
 
 def _bar_epoch(
@@ -500,113 +619,20 @@ def _bar_epoch(
     timeframe: str,
 ) -> Bar:
     value = int(str(open_time))
-    return _bar_ms(value if value >= 10_000_000_000 else value * 1000, open_, high, low, close, volume, timeframe)
+    return _bar_ms(
+        value if value >= 10_000_000_000 else value * 1000,
+        open_,
+        high,
+        low,
+        close,
+        volume,
+        timeframe,
+    )
 
 
 def _iso_ms(value: int) -> str:
-    return datetime.fromtimestamp(value / 1000, tz=timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def _minutes(timeframe: str) -> int:
-    mapping = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240, "1d": 1440}
-    key = timeframe.lower()
-    if key not in mapping:
-        raise MDSymbolUnsupported(f"Unsupported spot timeframe: {timeframe}")
-    return mapping[key]
-
-
-def _requested_limit(
-    timeframe: str, start: int | None, end: int | None, *, max_limit: int
-) -> int:
-    if start is None or end is None or end <= start:
-        return max_limit
-    duration = close_time_ms(0, timeframe) + 1
-    bars = max(1, (end - start + duration - 1) // duration)
-    return min(max_limit, bars)
-
-
-def _coinbase_granularity(timeframe: str) -> int:
-    allowed = {1: 60, 5: 300, 15: 900, 60: 3600, 360: 21_600, 1440: 86_400}
-    minutes = _minutes(timeframe)
-    if minutes not in allowed:
-        raise MDSymbolUnsupported(f"Unsupported Coinbase timeframe: {timeframe}")
-    return allowed[minutes]
-
-
-def _okx_bar(timeframe: str) -> str:
-    mapping = {"1m": "1m", "3m": "3m", "5m": "5m", "15m": "15m", "30m": "30m", "1h": "1H", "4h": "4H", "1d": "1D"}
-    try:
-        return mapping[timeframe.lower()]
-    except KeyError as exc:
-        raise MDSymbolUnsupported(f"Unsupported OKX timeframe: {timeframe}") from exc
-
-
-def _kucoin_type(timeframe: str) -> str:
-    mapping = {"1m": "1min", "3m": "3min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "1hour", "4h": "4hour", "1d": "1day"}
-    try:
-        return mapping[timeframe.lower()]
-    except KeyError as exc:
-        raise MDSymbolUnsupported(f"Unsupported KuCoin timeframe: {timeframe}") from exc
-
-
-def _bitget_granularity(timeframe: str) -> str:
-    mapping = {"1m": "1min", "3m": "3min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "1h", "4h": "4h", "1d": "1day"}
-    try:
-        return mapping[timeframe.lower()]
-    except KeyError as exc:
-        raise MDSymbolUnsupported(f"Unsupported Bitget timeframe: {timeframe}") from exc
-
-
-def _bitget_mix_granularity(timeframe: str) -> str:
-    mapping = {"1m": "1m", "3m": "3m", "5m": "5m", "15m": "15m", "30m": "30m", "1h": "1H", "4h": "4H", "1d": "1D"}
-    try:
-        return mapping[timeframe.lower()]
-    except KeyError as exc:
-        raise MDSymbolUnsupported(f"Unsupported Bitget timeframe: {timeframe}") from exc
-
-
-def _kraken_futures_interval(timeframe: str) -> str:
-    mapping = {"1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m", "1h": "1h", "4h": "4h", "1d": "1d"}
-    try:
-        return mapping[timeframe.lower()]
-    except KeyError as exc:
-        raise MDSymbolUnsupported(f"Unsupported Kraken futures timeframe: {timeframe}") from exc
-
-
-def _gate_settlement(symbol: str, market: str) -> str:
-    if market == "linear" or "USDT" in symbol.upper():
-        return "usdt"
-    base = symbol.upper().split("_", 1)[0].split("-", 1)[0]
-    return base.lower() or "btc"
-
-
-def _gate_interval(timeframe: str) -> str:
-    mapping = {"1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m", "1h": "1h", "4h": "4h", "1d": "1d"}
-    try:
-        return mapping[timeframe.lower()]
-    except KeyError as exc:
-        raise MDSymbolUnsupported(f"Unsupported Gate.io timeframe: {timeframe}") from exc
-
-
-def _htx_period(timeframe: str) -> str:
-    mapping = {"1m": "1min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "60min", "4h": "4hour", "1d": "1day"}
-    try:
-        return mapping[timeframe.lower()]
-    except KeyError as exc:
-        raise MDSymbolUnsupported(f"Unsupported HTX timeframe: {timeframe}") from exc
-
-
-def _mexc_interval(timeframe: str) -> str:
-    mapping = {"1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m", "1h": "1h", "4h": "4h", "1d": "1d"}
-    try:
-        return mapping[timeframe.lower()]
-    except KeyError as exc:
-        raise MDSymbolUnsupported(f"Unsupported MEXC timeframe: {timeframe}") from exc
-
-
-def _mexc_contract_interval(timeframe: str) -> str:
-    mapping = {"1m": "Min1", "5m": "Min5", "15m": "Min15", "30m": "Min30", "1h": "Min60", "4h": "Hour4", "1d": "Day1"}
-    try:
-        return mapping[timeframe.lower()]
-    except KeyError as exc:
-        raise MDSymbolUnsupported(f"Unsupported MEXC contract timeframe: {timeframe}") from exc
+    return (
+        datetime.fromtimestamp(value / 1000, tz=timezone.utc)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )

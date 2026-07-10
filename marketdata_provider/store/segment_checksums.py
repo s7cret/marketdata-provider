@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import struct
 from decimal import Decimal
 from typing import Iterable

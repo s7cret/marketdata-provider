@@ -26,14 +26,77 @@ class _FakeClient:
     calls: list[tuple[str, dict[str, object], dict[str, object]]] = []
 
     PAYLOADS = {
-        "www.okx.com": {"data": [{"instId": "BTC-USDT", "baseCcy": "BTC", "quoteCcy": "USDT", "state": "live"}]},
-        "api.exchange.coinbase.com": [{"id": "BTC-USD", "base_currency": "BTC", "quote_currency": "USD", "status": "online", "trading_disabled": False}],
-        "api.kraken.com": {"result": {"XXBTZUSD": {"altname": "XBTUSD", "wsname": "BTC/USD", "status": "online"}}},
-        "api.kucoin.com": {"data": [{"symbol": "BTC-USDT", "baseCurrency": "BTC", "quoteCurrency": "USDT", "enableTrading": True}]},
-        "api.bitget.com": {"data": [{"symbol": "BTCUSDT", "baseCoin": "BTC", "quoteCoin": "USDT", "status": "online"}]},
-        "api.gateio.ws": [{"id": "BTC_USDT", "base": "BTC", "quote": "USDT", "trade_status": "tradable"}],
-        "api.huobi.pro": {"data": [{"sc": "btcusdt", "bcdn": "BTC", "qcdn": "USDT", "state": "online"}]},
-        "api.mexc.com": {"symbols": [{"symbol": "BTCUSDT", "baseAsset": "BTC", "quoteAsset": "USDT", "status": "ENABLED"}]},
+        "www.okx.com": {
+            "data": [
+                {
+                    "instId": "BTC-USDT",
+                    "baseCcy": "BTC",
+                    "quoteCcy": "USDT",
+                    "state": "live",
+                }
+            ]
+        },
+        "api.exchange.coinbase.com": [
+            {
+                "id": "BTC-USD",
+                "base_currency": "BTC",
+                "quote_currency": "USD",
+                "status": "online",
+                "trading_disabled": False,
+            }
+        ],
+        "api.kraken.com": {
+            "result": {
+                "XXBTZUSD": {
+                    "altname": "XBTUSD",
+                    "wsname": "BTC/USD",
+                    "status": "online",
+                }
+            }
+        },
+        "api.kucoin.com": {
+            "data": [
+                {
+                    "symbol": "BTC-USDT",
+                    "baseCurrency": "BTC",
+                    "quoteCurrency": "USDT",
+                    "enableTrading": True,
+                }
+            ]
+        },
+        "api.bitget.com": {
+            "data": [
+                {
+                    "symbol": "BTCUSDT",
+                    "baseCoin": "BTC",
+                    "quoteCoin": "USDT",
+                    "status": "online",
+                }
+            ]
+        },
+        "api.gateio.ws": [
+            {
+                "id": "BTC_USDT",
+                "base": "BTC",
+                "quote": "USDT",
+                "trade_status": "tradable",
+            }
+        ],
+        "api.huobi.pro": {
+            "data": [
+                {"sc": "btcusdt", "bcdn": "BTC", "qcdn": "USDT", "state": "online"}
+            ]
+        },
+        "api.mexc.com": {
+            "symbols": [
+                {
+                    "symbol": "BTCUSDT",
+                    "baseAsset": "BTC",
+                    "quoteAsset": "USDT",
+                    "status": "ENABLED",
+                }
+            ]
+        },
     }
 
     def __init__(self, **kwargs):
@@ -49,10 +112,25 @@ class _FakeClient:
         self.calls.append((url, params or {}, self.kwargs))
         if "api.exchange.coinbase.com/products/" in url:
             symbol = url.rsplit("/", 1)[-1]
-            return _FakeResponse({"id": symbol, "base_currency": "BTC", "quote_currency": symbol.rsplit("-", 1)[-1], "status": "online", "trading_disabled": False})
+            return _FakeResponse(
+                {
+                    "id": symbol,
+                    "base_currency": "BTC",
+                    "quote_currency": symbol.rsplit("-", 1)[-1],
+                    "status": "online",
+                    "trading_disabled": False,
+                }
+            )
         if "api.gateio.ws/api/v4/spot/currency_pairs/" in url:
             symbol = url.rsplit("/", 1)[-1]
-            return _FakeResponse({"id": symbol, "base": "BTC", "quote": symbol.rsplit("_", 1)[-1], "trade_status": "tradable"})
+            return _FakeResponse(
+                {
+                    "id": symbol,
+                    "base": "BTC",
+                    "quote": symbol.rsplit("_", 1)[-1],
+                    "trade_status": "tradable",
+                }
+            )
         if "api.huobi.pro/market/detail/merged" in url:
             return _FakeResponse({"status": "ok", "tick": {"close": 1}})
         for host, payload in self.PAYLOADS.items():
@@ -83,7 +161,9 @@ def test_exchange_registry_marks_all_top_ten_as_native_searchable_spot() -> None
     assert all("spot" in exchange.native_markets for exchange in native)
 
 
-def test_search_symbols_supports_all_native_spot_exchanges_without_network(monkeypatch) -> None:
+def test_search_symbols_supports_all_native_spot_exchanges_without_network(
+    monkeypatch,
+) -> None:
     import sys
 
     monkeypatch.setitem(sys.modules, "httpx", _FakeHttpx)
@@ -128,7 +208,10 @@ def test_market_data_service_routes_native_spot_exchange_to_public_spot_source(
         raising=False,
     )
     service = MarketDataService(
-        MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path), history=MarketDataConfig().history)
+        MarketDataConfig(
+            storage=StorageConfig(cache_dir=tmp_path),
+            history=MarketDataConfig().history,
+        )
     )
     query = BarQuery(
         instrument=InstrumentKey("okx", "spot", "BTC-USDT"),

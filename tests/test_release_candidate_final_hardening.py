@@ -1009,7 +1009,9 @@ def test_segment_store_parquet_seek_and_service_helper_edges(
     monkeypatch.setattr(
         svc,
         "BinanceArchiveSource",
-        lambda config: types.SimpleNamespace(fetch=lambda query, progress_callback=None: [_mb(0)]),
+        lambda config: types.SimpleNamespace(
+            fetch=lambda query, progress_callback=None: [_mb(0)]
+        ),
     )
     monkeypatch.setattr(
         svc,
@@ -1101,7 +1103,22 @@ def test_remaining_retries_offline_repair_and_timeout_paths(
         max_retries=1,
     ) == {"retCode": 0}
 
-    with pytest.raises(MDUnsupportedFeature, match="Parquet"):
+    with monkeypatch.context() as missing_pyarrow:
+        missing_pyarrow.setitem(sys.modules, "pyarrow", None)
+        missing_pyarrow.delitem(sys.modules, "pyarrow.parquet", raising=False)
+        with pytest.raises(MDUnsupportedFeature, match="requires pyarrow"):
+            OfflineDataProvider(tmp_path / "missing.parquet")._read_parquet("1m")
+
+    pyarrow = types.ModuleType("pyarrow")
+    parquet = types.ModuleType("pyarrow.parquet")
+
+    def fail_parquet_read(_path: Path) -> None:
+        raise OSError("invalid parquet")
+
+    setattr(parquet, "read_table", fail_parquet_read)
+    monkeypatch.setitem(sys.modules, "pyarrow", pyarrow)
+    monkeypatch.setitem(sys.modules, "pyarrow.parquet", parquet)
+    with pytest.raises(MDUnsupportedFeature, match="offline data unavailable"):
         OfflineDataProvider(tmp_path / "missing.parquet")._read_parquet("1m")
 
     inst = InstrumentKey("binance", "spot", "BTCUSDT")

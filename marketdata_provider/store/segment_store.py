@@ -21,8 +21,9 @@ from marketdata_provider.store.segment_checksums import _update_checksum, bars_c
 from marketdata_provider.store.segment_checksums import (
     market_bar_checksum as market_bar_checksum,
 )
+from marketdata_provider.store.segment_csv import seek_csv_near_start
 from marketdata_provider.store.segment_rows import row_to_bar
-from marketdata_provider.timeframes import canonical_timeframe, timeframe_ms
+from marketdata_provider.timeframes import canonical_timeframe
 from marketdata_provider.validation import validate_bars
 
 SegmentFormat = Literal["csv", "parquet"]
@@ -224,6 +225,7 @@ class SegmentStore:
         manifest: dict[str, object] | None = None
         if manifest_path.exists():
             manifest = json.loads(manifest_path.read_text())
+            assert manifest is not None
             raw_format = manifest.get("data_format", fmt)
             if raw_format in {"csv", "parquet"}:
                 fmt = cast(SegmentFormat, raw_format)
@@ -632,56 +634,7 @@ class SegmentStore:
                 "Unsupported segment runtime contract", details=manifest
             )
 
-    def _seek_csv_near_start(
-        self, fh, path: Path, *, start: int, manifest: dict[str, object]
-    ) -> None:
-        start_time = manifest.get("start_time")
-        rows_count = manifest.get("rows_count")
-        timeframe = manifest.get("timeframe")
-        if (
-            not isinstance(start_time, int)
-            or not isinstance(rows_count, int)
-            or rows_count <= 0
-            or not isinstance(timeframe, str)
-        ):
-            return
-        try:
-            duration = timeframe_ms(timeframe)
-        except Exception:
-            return
-        if duration <= 0 or start <= start_time:
-            return
-
-        header_end = fh.tell()
-        file_size = path.stat().st_size
-        if file_size <= header_end:
-            return
-        low = header_end
-        high = file_size - 1
-        best = header_end
-        for _ in range(24):
-            if low >= high:
-                break
-            mid = (low + high) // 2
-            fh.seek(mid)
-            if mid > header_end:
-                fh.readline()
-            candidate_pos = fh.tell()
-            line = fh.readline()
-            if not line:
-                high = max(header_end, mid - 1)
-                continue
-            try:
-                candidate_time = int(line.split(",", 1)[0])
-            except ValueError:
-                fh.seek(header_end)
-                return
-            if candidate_time <= start:
-                best = candidate_pos
-                low = fh.tell()
-            else:
-                high = max(header_end, mid - 1)
-        fh.seek(best)
+    _seek_csv_near_start = staticmethod(seek_csv_near_start)
 
     def _atomic_write_csv(self, path: Path, bars: list[MarketBar]) -> None:
         fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", dir=str(path.parent))

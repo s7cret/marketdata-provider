@@ -19,6 +19,9 @@ EXCLUDE_PARTS = {
     "htmlcov",
 }
 EXCLUDE_SUFFIXES = {".pyc", ".pyo", ".coverage", ".log"}
+BUILD_ARTIFACT_PARTS = {"build", "dist"}
+ARCHIVE_SUFFIXES = (".whl", ".zip", ".tar.gz", ".tar.bz2", ".tar.xz")
+ARTIFACT_SCAN_IGNORE_PARTS = EXCLUDE_PARTS - BUILD_ARTIFACT_PARTS
 
 
 @dataclass(frozen=True)
@@ -37,7 +40,30 @@ def _should_include(relative_path: Path) -> bool:
         return False
     if relative_path.name in {".coverage"} or relative_path.suffix in EXCLUDE_SUFFIXES:
         return False
+    if relative_path.name.endswith(ARCHIVE_SUFFIXES):
+        return False
     return True
+
+
+def _is_forbidden_artifact(relative_path: Path) -> bool:
+    if any(
+        part in ARTIFACT_SCAN_IGNORE_PARTS or part.endswith(".egg-info")
+        for part in relative_path.parts
+    ):
+        return False
+    return any(part in BUILD_ARTIFACT_PARTS for part in relative_path.parts) or (
+        relative_path.name.endswith(ARCHIVE_SUFFIXES)
+    )
+
+
+def _forbidden_artifacts(root: Path) -> list[str]:
+    forbidden: list[str] = []
+    for path in root.rglob("*"):
+        if path.is_file() and not path.is_symlink():
+            relative_path = path.relative_to(root)
+            if _is_forbidden_artifact(relative_path):
+                forbidden.append(relative_path.as_posix())
+    return sorted(forbidden)
 
 
 def iter_files(root: str | Path) -> list[Path]:
@@ -45,7 +71,7 @@ def iter_files(root: str | Path) -> list[Path]:
     return sorted(
         p
         for p in base.rglob("*")
-        if p.is_file() and _should_include(p.relative_to(base))
+        if p.is_file() and not p.is_symlink() and _should_include(p.relative_to(base))
     )
 
 
@@ -53,7 +79,7 @@ def distribution_manifest(root: str | Path) -> DistributionManifest:
     base = Path(root)
     files = iter_files(base)
     digest = hashlib.sha256()
-    forbidden: list[str] = []
+    forbidden = _forbidden_artifacts(base)
     for path in files:
         rel = path.relative_to(base).as_posix()
         if "__pycache__" in rel or rel.endswith(".pyc") or rel.startswith(".git/"):
@@ -62,6 +88,7 @@ def distribution_manifest(root: str | Path) -> DistributionManifest:
         digest.update(b"\0")
         digest.update(path.read_bytes())
         digest.update(b"\0")
+    forbidden = sorted(set(forbidden))
     return DistributionManifest(
         len(files), digest.hexdigest(), len(forbidden), forbidden
     )
