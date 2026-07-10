@@ -429,6 +429,7 @@ def test_bybit_rate_limit_retcode(monkeypatch):
         )
 
 
+@pytest.mark.live_network
 def test_network_smoke_binance_is_mandatory():
     bars = binance_provider.binance_get_bars_sync(
         "BINANCE:BTCUSDT", "1m", None, None, BinanceConfig(), market="spot", max_bars=2

@@ -290,6 +290,7 @@ def test_cli_new_stage_d_commands(tmp_path: Path, capsys):
     assert "stage-d-raw-1" in capsys.readouterr().out
 
 
+@pytest.mark.live_network
 @pytest.mark.asyncio
 async def test_live_ws_smoke_is_mandatory(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("MARKETDATA_ALLOW_STREAM", "1")

@@ -32,6 +32,9 @@ include = ["marketdata_provider*"]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-q"
+markers = [
+  "live_network: requires unrestricted external exchange REST/WebSocket access",
+]
 
 [tool.mypy]
 python_version = "3.10"

@@ -1,9 +1,14 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from marketdata_provider.config import HistoryConfig, MarketDataConfig, StorageConfig
 from marketdata_provider.contracts import BarQuery, InstrumentKey, parse_timeframe
 from marketdata_provider.exchanges.binance.provider import binance_get_bars_sync
 from marketdata_provider.service import MarketDataService
+
+
+pytestmark = pytest.mark.live_network
 
 
 def _ms(year, month, day):
