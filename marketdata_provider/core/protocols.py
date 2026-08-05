@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
+
 from marketdata_provider.core.bar import Bar
 
 

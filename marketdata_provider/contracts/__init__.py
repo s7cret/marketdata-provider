@@ -30,13 +30,13 @@ from marketdata_provider.contracts.series import BarSeries, CoverageReport, Stor
 from marketdata_provider.contracts.timeframe import Timeframe, parse_timeframe
 
 __all__ = [
+    "AggTrade",
     "Bar",
     "BarQuery",
     "BarSeries",
     "CandleStore",
     "CoverageReport",
     "CoverageValidationError",
-    "AggTrade",
     "FootprintBar",
     "FootprintLevel",
     "FootprintProvider",

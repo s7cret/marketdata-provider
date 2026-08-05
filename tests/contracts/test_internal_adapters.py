@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from marketdata_provider._adapters import contract_to_market_bar
-from marketdata_provider._adapters import core_to_contract_bar
-from marketdata_provider._adapters import series_from_core_bars
-from marketdata_provider._adapters import series_from_market_bars
+from marketdata_provider._adapters import (
+    contract_to_market_bar,
+    core_to_contract_bar,
+    series_from_core_bars,
+    series_from_market_bars,
+)
 from marketdata_provider.contracts import BarQuery, InstrumentKey, parse_timeframe
 from marketdata_provider.contracts.bar import Bar as ContractBar
 from marketdata_provider.core.bar import Bar as CoreBar

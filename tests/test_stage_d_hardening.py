@@ -1,12 +1,12 @@
-from pathlib import Path
 import importlib.util
 import os
 import sqlite3
+from pathlib import Path
 
 import pytest
 
-from marketdata_provider.cli.main import main
 from marketdata_provider._pathing import safe_path_part
+from marketdata_provider.cli.main import main
 from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.errors import MDUnsupportedFeature
 from marketdata_provider.store import RawStore, SegmentStore

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import itertools
 import json
 import os
 from dataclasses import asdict
@@ -15,16 +16,20 @@ from marketdata_provider.config import (
     StorageConfig,
 )
 from marketdata_provider.contracts import BarQuery, InstrumentKey, parse_timeframe
+from marketdata_provider.errors import (
+    MarketDataError,
+    MDNetworkUnavailable,
+    MDUnsupportedFeature,
+)
+from marketdata_provider.exchanges.binance.provider import binance_get_bars_sync
+from marketdata_provider.exchanges.bybit.provider import bybit_get_bars_sync
 from marketdata_provider.exchanges.registry import (
     exchange_payloads,
     get_exchange,
     market_type_payloads,
 )
-from marketdata_provider.errors import (
-    MDNetworkUnavailable,
-    MDUnsupportedFeature,
-    MarketDataError,
-)
+from marketdata_provider.providers import OfflineDataProvider
+from marketdata_provider.service import MarketDataService
 from marketdata_provider.store import CandleStore, RawStore, SegmentStore
 from marketdata_provider.store.repair import (
     audit_against_source,
@@ -41,10 +46,6 @@ from marketdata_provider.streaming import (
     normalize_bybit_kline,
     require_live_stream_enabled,
 )
-from marketdata_provider.exchanges.binance.provider import binance_get_bars_sync
-from marketdata_provider.exchanges.bybit.provider import bybit_get_bars_sync
-from marketdata_provider.providers import OfflineDataProvider
-from marketdata_provider.service import MarketDataService
 from marketdata_provider.symbols import normalize_symbol
 from marketdata_provider.validation import validate_bars
 
@@ -272,7 +273,7 @@ def _cmd_export(args: argparse.Namespace) -> int:
 def _cmd_coverage(args: argparse.Namespace) -> int:
     bars = _bars_from_source(args)
     gaps = 0
-    for prev, cur in zip(bars, bars[1:], strict=False):
+    for prev, cur in itertools.pairwise(bars):
         if prev.time_close is not None and cur.time != prev.time_close + 1:
             gaps += 1
     _json(

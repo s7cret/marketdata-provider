@@ -18,7 +18,7 @@ from marketdata_provider.contracts.errors import (
 from marketdata_provider.contracts.instrument import InstrumentKey
 from marketdata_provider.contracts.query import BarQuery
 from marketdata_provider.contracts.timeframe import parse_timeframe
-from marketdata_provider.core.bar import Bar, MarketBar, RUNTIME_CONTRACT_VERSION
+from marketdata_provider.core.bar import RUNTIME_CONTRACT_VERSION, Bar, MarketBar
 from marketdata_provider.errors import (
     MDInvalidExchangeResponse,
     MDNetworkUnavailable,
@@ -462,7 +462,7 @@ def test_package_main_entrypoint(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_factories_store_provider_and_live_adapter(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import marketdata_provider.factories as factories
+    from marketdata_provider import factories
     from marketdata_provider.contracts.bar import Bar as ContractBar
     from marketdata_provider.contracts.series import BarSeries, CoverageReport
     from marketdata_provider.factories import (
@@ -521,10 +521,10 @@ def test_factories_store_provider_and_live_adapter(
 
     class FakeRawClient:
         async def events(self, *, max_messages=None, timeout_s=None):
+            from marketdata_provider.streaming.kline import KlineUpdate
             from marketdata_provider.streaming.live import (
                 LiveKlineEvent as RawLiveEvent,
             )
-            from marketdata_provider.streaming.kline import KlineUpdate
 
             update = KlineUpdate(
                 "binance",
@@ -551,7 +551,7 @@ def test_factories_store_provider_and_live_adapter(
         raising=False,
     )
     # Patch import target used inside factory function.
-    import marketdata_provider.streaming as streaming
+    from marketdata_provider import streaming
 
     monkeypatch.setattr(
         streaming, "PublicKlineWebSocketClient", lambda **kwargs: FakeRawClient()
@@ -919,6 +919,7 @@ def test_async_http_client_retry_and_error_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import httpx
+
     import marketdata_provider.transport.async_client as ac
 
     assert ac.RetryConfig(base_sec=0.0).backoff(3) == 0.0

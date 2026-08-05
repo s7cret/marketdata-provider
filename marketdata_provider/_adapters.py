@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from typing import Iterable
+from collections.abc import Iterable
 
 from marketdata_provider.contracts.bar import Bar as ContractBar
 from marketdata_provider.contracts.instrument import InstrumentKey

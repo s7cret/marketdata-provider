@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from marketdata_provider.cli.main import main
-from marketdata_provider.core.bar import MarketBar, RUNTIME_CONTRACT_VERSION
+from marketdata_provider.core.bar import RUNTIME_CONTRACT_VERSION, MarketBar
 from marketdata_provider.errors import MDCacheConflict
 from marketdata_provider.store import CandleStore
 from marketdata_provider.streaming import (

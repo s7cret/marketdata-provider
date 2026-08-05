@@ -9,10 +9,8 @@ from typing import Any
 import pytest
 
 import marketdata_provider.exchanges.binance.archive as binance_archive
-import marketdata_provider.exchanges.public_spot as public_spot
 import marketdata_provider.service as service_module
-import marketdata_provider.symbols as symbols
-import marketdata_provider.symbols.public_markets as public_markets
+from marketdata_provider import symbols
 from marketdata_provider.contracts.timeframe import Timeframe
 from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.errors import (
@@ -20,9 +18,11 @@ from marketdata_provider.errors import (
     MDSymbolUnsupported,
     MDUnsupportedFeature,
 )
+from marketdata_provider.exchanges import public_spot
 from marketdata_provider.service import MarketDataService
 from marketdata_provider.store.segment_checksums import _canon_number
 from marketdata_provider.store.segment_store import SegmentStore
+from marketdata_provider.symbols import public_markets
 
 
 def _bar(time: int = 0) -> MarketBar:

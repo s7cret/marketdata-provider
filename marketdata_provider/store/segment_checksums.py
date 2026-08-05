@@ -3,15 +3,15 @@ from __future__ import annotations
 import csv
 import hashlib
 import struct
+from collections.abc import Iterable
 from decimal import Decimal
 from pathlib import Path
-from typing import Iterable, cast
+from typing import cast
 
 from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.errors import MDInvalidExchangeResponse
 from marketdata_provider.store.segment_rows import row_to_bar
 from marketdata_provider.timeframes import canonical_timeframe
-
 
 LEGACY_CANONICAL_CHECKSUM = "sha256-canonical-v1"
 LEGACY_TAIL_CHAIN_CHECKSUM = "sha256-tail-chain-v1"
@@ -48,7 +48,7 @@ PERSISTED_MARKET_BAR_FIELDS = (
 )
 
 
-def _canon_number(v: float | int | None) -> str | None:
+def _canon_number(v: float | None) -> str | None:
     """Canonical number formatting (kept for backward-compat / external use)."""
     if v is None:
         return None
@@ -201,13 +201,13 @@ def validate_persisted_bar_semantics(bar: MarketBar) -> None:
             )
 
 
-def _update_text(h: "hashlib._Hash", value: str) -> None:
+def _update_text(h: hashlib._Hash, value: str) -> None:
     encoded = value.encode("utf-8")
     h.update(struct.pack(">I", len(encoded)))
     h.update(encoded)
 
 
-def _update_checksum_identity(h: "hashlib._Hash", b: MarketBar) -> None:
+def _update_checksum_identity(h: hashlib._Hash, b: MarketBar) -> None:
     _update_text(h, b.exchange.lower())
     _update_text(h, b.market.lower())
     _update_text(h, b.symbol.upper())
@@ -216,7 +216,7 @@ def _update_checksum_identity(h: "hashlib._Hash", b: MarketBar) -> None:
     _update_text(h, canonical_timeframe(b.timeframe))
 
 
-def _update_checksum(h: "hashlib._Hash", b: MarketBar) -> None:
+def _update_checksum(h: hashlib._Hash, b: MarketBar) -> None:
     """Hash every persisted semantic field using the presence-aware v3 format."""
     _update_checksum_identity(h, b)
     h.update(
@@ -248,7 +248,7 @@ def _update_checksum(h: "hashlib._Hash", b: MarketBar) -> None:
     h.update(b"\n")
 
 
-def _update_checksum_v2(h: "hashlib._Hash", b: MarketBar) -> None:
+def _update_checksum_v2(h: hashlib._Hash, b: MarketBar) -> None:
     """Presence-unaware digest retained for v2 manifest validation."""
     _update_checksum_identity(h, b)
     h.update(
@@ -277,7 +277,7 @@ def _update_checksum_v2(h: "hashlib._Hash", b: MarketBar) -> None:
     h.update(b"\n")
 
 
-def _update_checksum_v1(h: "hashlib._Hash", b: MarketBar) -> None:
+def _update_checksum_v1(h: hashlib._Hash, b: MarketBar) -> None:
     """Original partial row digest retained only for legacy manifest validation."""
     h.update(b.exchange.lower().encode())
     h.update(b.market.lower().encode())

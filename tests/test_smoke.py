@@ -1,13 +1,12 @@
-#!/usr/bin/env python3
 """Smoke tests for marketdata_provider."""
 
 from __future__ import annotations
 
 from marketdata_provider import (
+    RUNTIME_CONTRACT_VERSION,
     Bar,
     MarketDataConfig,
     OfflineDataProvider,
-    RUNTIME_CONTRACT_VERSION,
 )
 
 

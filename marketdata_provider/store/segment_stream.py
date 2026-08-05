@@ -5,14 +5,21 @@ import hashlib
 import json
 import os
 import tempfile
+from collections.abc import Iterable
 from dataclasses import asdict
-from typing import Any, Iterable
+from typing import Any
 
-from marketdata_provider.core.bar import MarketBar, RUNTIME_CONTRACT_VERSION
+from marketdata_provider.core.bar import RUNTIME_CONTRACT_VERSION, MarketBar
 from marketdata_provider.errors import MDInvalidExchangeResponse
-from marketdata_provider.store.segment_checksums import TAIL_CHAIN_CHECKSUM, _update_checksum
+from marketdata_provider.store.segment_checksums import (
+    TAIL_CHAIN_CHECKSUM,
+    _update_checksum,
+)
 from marketdata_provider.store.segment_manifest import SegmentManifest
-from marketdata_provider.store.segment_replace import begin_replacement, finish_replacement
+from marketdata_provider.store.segment_replace import (
+    begin_replacement,
+    finish_replacement,
+)
 from marketdata_provider.timeframes import canonical_timeframe
 from marketdata_provider.validation import validate_bars
 

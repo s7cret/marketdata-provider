@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import AsyncIterator
 
 import pytest
+
+from marketdata_provider import LiveKlineEvent as TopLevelLiveKlineEvent
 from marketdata_provider import (
     create_candle_store,
     create_live_kline_client,
     create_provider,
 )
-from marketdata_provider import LiveKlineEvent as TopLevelLiveKlineEvent
 from marketdata_provider.config import (
     MarketDataConfig,
     OfflineDataConfig,

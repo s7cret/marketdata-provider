@@ -12,11 +12,11 @@ __all__ = [
     "CandleStore",
     "CommitResult",
     "CurrentStore",
-    "StreamCheckpoint",
     "RawManifest",
     "RawStore",
     "SegmentManifest",
     "SegmentStore",
+    "StreamCheckpoint",
     "bars_checksum",
     "market_bar_checksum",
 ]

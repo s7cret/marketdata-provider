@@ -43,6 +43,21 @@ disallow_untyped_defs = false
 warn_unused_ignores = true
 ignore_missing_imports = true
 
+[tool.ruff.lint]
+# Acceptance, adapter, and storage boundaries deliberately convert broad
+# failures into deterministic diagnostics or recovery outcomes.
+ignore = ["BLE001"]
+
+[tool.ruff.lint.per-file-ignores]
+# Compatibility modules intentionally re-export the stable public surface.
+"marketdata_provider/core/timeframes.py" = ["F403"]
+"marketdata_provider/core/validation.py" = ["F403"]
+# These tests intentionally model process death below Exception.
+"tests/test_incremental_append.py" = ["TRY002"]
+# Shared mutable fakes model cross-instance HTTP/discovery state.
+"tests/test_multi_exchange_spot_adapters.py" = ["RUF012"]
+"tests/test_public_spot_adapter.py" = ["RUF012"]
+"tests/test_symbol_discovery.py" = ["RUF012"]
 
 [tool.coverage.run]
 source = ["marketdata_provider"]

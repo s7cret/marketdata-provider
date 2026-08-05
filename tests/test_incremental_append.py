@@ -17,8 +17,10 @@ from marketdata_provider.errors import MDCacheConflict, MDInvalidExchangeRespons
 from marketdata_provider.service import MarketDataService
 from marketdata_provider.store import SegmentStore
 from marketdata_provider.store.candle_store import CandleStore
-from marketdata_provider.store.segment_checksums import bars_checksum, legacy_bars_checksum
-
+from marketdata_provider.store.segment_checksums import (
+    bars_checksum,
+    legacy_bars_checksum,
+)
 
 KEY = {
     "exchange": "binance",

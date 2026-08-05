@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import marketdata_provider.acceptance as acceptance
+from marketdata_provider import acceptance
 from marketdata_provider.acceptance import (
     REQUIRED_PHASE2_CAPABILITIES,
     AcceptanceCheck,

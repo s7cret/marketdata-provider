@@ -17,8 +17,8 @@ from marketdata_provider.store.segment_checksums import (
     bars_checksum,
     legacy_bars_checksum,
     presence_unaware_bars_checksum,
-    validate_persisted_bar_semantics,
     validate_csv_checksum,
+    validate_persisted_bar_semantics,
 )
 from marketdata_provider.validation import validate_bars
 

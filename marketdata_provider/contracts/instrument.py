@@ -34,7 +34,7 @@ class InstrumentKey:
         return f"{self.exchange}/{self.market}/{self.symbol}"
 
     @classmethod
-    def parse(cls, value: str) -> "InstrumentKey":
+    def parse(cls, value: str) -> InstrumentKey:
         parts = value.split("/")
         if len(parts) != 3:
             raise InvalidInstrumentError(

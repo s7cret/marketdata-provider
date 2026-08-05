@@ -1,4 +1,4 @@
-from marketdata_provider.core.bar import Bar, MarketBar, RUNTIME_CONTRACT_VERSION
+from marketdata_provider.core.bar import RUNTIME_CONTRACT_VERSION, Bar, MarketBar
 from marketdata_provider.core.protocols import (
     DataProvider,
     HistoricalDataProvider,
@@ -7,11 +7,11 @@ from marketdata_provider.core.protocols import (
 )
 
 __all__ = [
-    "Bar",
-    "MarketBar",
     "RUNTIME_CONTRACT_VERSION",
+    "Bar",
     "DataProvider",
     "HistoricalDataProvider",
     "IntrabarDataProvider",
     "LowerTimeframeDataProvider",
+    "MarketBar",
 ]

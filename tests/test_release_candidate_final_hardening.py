@@ -1,19 +1,20 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import nullcontext
 import json
 import runpy
-import warnings
 import sys
 import types
+import warnings
 import zipfile
 from argparse import Namespace
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
+from typing_extensions import Self
 
 from marketdata_provider.config import BinanceConfig, MarketDataConfig, StorageConfig
 from marketdata_provider.contracts import BarQuery, InstrumentKey, parse_timeframe
@@ -315,10 +316,10 @@ class FakeClient:
             raise httpx.ConnectError("empty")
         return self.responses.pop(0)
 
-    def __enter__(self) -> "FakeClient":
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, *args: Any) -> None:
+    def __exit__(self, *args: object) -> None:
         return None
 
 
@@ -528,7 +529,7 @@ def test_footprint_service_and_store_final_branches(
     ]
     bars = aggregate_trades_to_footprint(trades, query)
     assert len(bars) == 2 and bars[0].levels[0].buy_volume == 2
-    assert _coverage_for(query, tuple()).status == "empty"
+    assert _coverage_for(query, ()).status == "empty"
     assert _day_partition(0) == "day=1970-01-01"
 
     store = FootprintStore(tmp_path)
@@ -596,7 +597,7 @@ def test_footprint_service_and_store_final_branches(
 def test_factories_and_service_remaining_branches(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import marketdata_provider.factories as factories
+    from marketdata_provider import factories
     from marketdata_provider.factories import (
         _CandleStoreAdapter,
         create_footprint_provider,
@@ -707,9 +708,8 @@ def test_store_and_repair_remaining_branches(
     assert candle.commit_closed(open_bar).status == "upserted"
 
     current = CurrentStore(tmp_path / "current.sqlite")
-    with pytest.raises(RuntimeError):
-        with current._connect() as _db:
-            raise RuntimeError("rollback")
+    with pytest.raises(RuntimeError), current._connect() as _db:
+        raise RuntimeError("rollback")
 
     raw = RawStore(tmp_path / "raw")
     assert (
@@ -758,7 +758,7 @@ def test_store_and_repair_remaining_branches(
     store.replace_all([_mb(0), _mb(60_000)], **key)
     assert store.read_all(**key, start=60_000, end=120_000)[0].time == 60_000
     assert store.vacuum()["removed_stale_data_files"] == 0
-    path, manifest_path = store._paths(
+    path, _manifest_path = store._paths(
         **key, source_kind="trade_kline", data_format="parquet"
     )
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1117,7 +1117,7 @@ def test_remaining_retries_offline_repair_and_timeout_paths(
     def fail_parquet_read(_path: Path) -> None:
         raise OSError("invalid parquet")
 
-    setattr(parquet, "read_table", fail_parquet_read)
+    parquet.read_table = fail_parquet_read
     monkeypatch.setitem(sys.modules, "pyarrow", pyarrow)
     monkeypatch.setitem(sys.modules, "pyarrow.parquet", parquet)
     with pytest.raises(MDUnsupportedFeature, match="offline data unavailable"):

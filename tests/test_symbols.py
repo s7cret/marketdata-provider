@@ -1,4 +1,5 @@
 import pytest
+
 from marketdata_provider.config import MarketDataConfig
 from marketdata_provider.errors import MDSymbolAmbiguous
 from marketdata_provider.symbols import (

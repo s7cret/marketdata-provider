@@ -7,6 +7,7 @@ import os
 import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import ClassVar
 
 from marketdata_provider.contracts.footprint import (
     FootprintBar,
@@ -37,7 +38,7 @@ class FootprintSegmentManifest:
 
 
 class FootprintStore:
-    fields = [
+    fields: ClassVar[list[str]] = [
         "time",
         "time_close",
         "price_low",

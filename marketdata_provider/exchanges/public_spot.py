@@ -346,9 +346,7 @@ def _market_request(
             params,
         )
     if exchange == "htx":
-        if market == "linear":
-            url = "https://api.hbdm.com/linear-swap-ex/market/history/kline"
-        elif market == "delivery_futures":
+        if market == "linear" or market == "delivery_futures":
             url = "https://api.hbdm.com/linear-swap-ex/market/history/kline"
         else:
             url = "https://api.hbdm.com/swap-ex/market/history/kline"
@@ -413,9 +411,7 @@ def _extract_market_rows(exchange: str, payload: Any) -> list[Any]:
         rows = payload.get("data") if isinstance(payload, dict) else None
     elif exchange == "kraken":
         rows = payload.get("candles") if isinstance(payload, dict) else None
-    elif exchange == "kucoin":
-        rows = payload.get("data") if isinstance(payload, dict) else None
-    elif exchange == "bitget":
+    elif exchange == "kucoin" or exchange == "bitget":
         rows = payload.get("data") if isinstance(payload, dict) else None
     elif exchange in {"gateio", "htx"}:
         rows = payload.get("data") if isinstance(payload, dict) else payload
@@ -457,11 +453,7 @@ def _extract_rows(exchange: str, payload: Any) -> list[Any]:
             if isinstance(result, dict)
             else []
         )
-    elif exchange == "kucoin":
-        rows = payload.get("data") if isinstance(payload, dict) else None
-    elif exchange == "bitget":
-        rows = payload.get("data") if isinstance(payload, dict) else None
-    elif exchange == "htx":
+    elif exchange == "kucoin" or exchange == "bitget" or exchange == "htx":
         rows = payload.get("data") if isinstance(payload, dict) else None
     elif exchange == "mexc":
         rows = payload if isinstance(payload, list) else None

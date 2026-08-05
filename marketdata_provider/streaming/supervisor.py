@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.errors import MDNetworkUnavailable

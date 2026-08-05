@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 import importlib.util
-from contextlib import closing
 import io
 import runpy
 import sqlite3
 import sys
 import types
 import zipfile
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
+from typing_extensions import Self
 
 from marketdata_provider.config import (
     BinanceConfig,
@@ -121,10 +122,10 @@ class FakeClient:
         self.responses = responses
         self.calls: list[dict[str, Any]] = []
 
-    def __enter__(self) -> "FakeClient":
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
+    def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
         return False
 
     def get(self, url: str, params: dict[str, Any]) -> FakeResponse:
@@ -193,10 +194,10 @@ def test_archive_download_duration_and_invalid_zip_branches(
     from marketdata_provider.exchanges.binance import archive
 
     class Download:
-        def __enter__(self) -> "Download":
+        def __enter__(self) -> Self:
             return self
 
-        def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
             return False
 
         def read(self) -> bytes:
@@ -732,9 +733,9 @@ def test_streaming_overlap_branch() -> None:
 def test_final_symbol_timeframe_validation_edges() -> None:
     from marketdata_provider.core.bar import Bar
     from marketdata_provider.errors import (
+        MDSymbolUnsupported,
         MDTimeframeUnsupported,
         MDValidationError,
-        MDSymbolUnsupported,
     )
     from marketdata_provider.symbols import normalize_symbol
     from marketdata_provider.timeframes import canonical_timeframe, timeframe_ms
@@ -776,9 +777,8 @@ def test_final_segment_store_context_and_row_helpers(tmp_path: Path) -> None:
     from marketdata_provider.store.segment_store import SegmentStore
 
     store = SegmentStore(tmp_path / "segments")
-    with pytest.raises(RuntimeError, match="rollback branch"):
-        with store._connect_index():
-            raise RuntimeError("rollback branch")
+    with pytest.raises(RuntimeError, match="rollback branch"), store._connect_index():
+        raise RuntimeError("rollback branch")
 
     assert store._parse_bool(None) is True
     assert store._parse_bool(True) is True

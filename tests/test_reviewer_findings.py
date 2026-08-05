@@ -7,18 +7,18 @@ import os
 import sqlite3
 import struct
 import threading
+from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import asdict, fields, replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 import httpx
 import pytest
 
-import marketdata_provider.acceptance as acceptance
 import marketdata_provider.exchanges.binance.provider as binance_provider
-import marketdata_provider.store.segment_append as segment_append
+from marketdata_provider import acceptance
 from marketdata_provider.config import BinanceConfig
 from marketdata_provider.contracts import BarQuery, InstrumentKey, parse_timeframe
 from marketdata_provider.contracts.errors import CoverageValidationError
@@ -30,8 +30,10 @@ from marketdata_provider.errors import (
 )
 from marketdata_provider.factories import _CandleStoreAdapter, _same_candle_payload
 from marketdata_provider.service import MarketDataService
-from marketdata_provider.store import SegmentStore
+from marketdata_provider.store import SegmentStore, segment_append
 from marketdata_provider.store.candle_store import CandleStore
+from marketdata_provider.store.repair import _same_candle_values
+from marketdata_provider.store.segment_append import recover_append_journal
 from marketdata_provider.store.segment_checksums import (
     LEGACY_TAIL_CHAIN_CHECKSUM,
     PRESENCE_UNAWARE_TAIL_CHAIN_CHECKSUM,
@@ -41,7 +43,6 @@ from marketdata_provider.store.segment_checksums import (
     market_bar_checksum,
     presence_unaware_bars_checksum,
 )
-from marketdata_provider.store.segment_append import recover_append_journal
 from marketdata_provider.store.segment_read import iter_all
 from marketdata_provider.store.segment_replace import (
     _journal_member_name,
@@ -49,8 +50,6 @@ from marketdata_provider.store.segment_replace import (
     finish_replacement,
     recover_replacement_journal,
 )
-from marketdata_provider.store.repair import _same_candle_values
-
 
 KEY: dict[str, Any] = {
     "exchange": "binance",

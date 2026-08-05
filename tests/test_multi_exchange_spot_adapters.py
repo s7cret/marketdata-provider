@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from marketdata_provider.exchanges.registry import list_exchanges
 from marketdata_provider.config import MarketDataConfig, StorageConfig
 from marketdata_provider.contracts import BarQuery, InstrumentKey, parse_timeframe
 from marketdata_provider.core.bar import Bar
+from marketdata_provider.exchanges.registry import list_exchanges
 from marketdata_provider.service import MarketDataService
 from marketdata_provider.symbols import search_symbols
 

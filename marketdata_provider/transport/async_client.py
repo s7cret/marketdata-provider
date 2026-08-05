@@ -1,9 +1,12 @@
 from __future__ import annotations
+
 import asyncio
 import random
 from dataclasses import dataclass
 from typing import Any
+
 import httpx
+from typing_extensions import Self
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,7 +35,7 @@ class MarketDataHTTPClient:
         self.user_agent = user_agent
         self._client: httpx.AsyncClient | None = None
 
-    async def __aenter__(self) -> "MarketDataHTTPClient":
+    async def __aenter__(self) -> Self:
         self._client = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=self.timeout,
@@ -40,7 +43,7 @@ class MarketDataHTTPClient:
         )
         return self
 
-    async def __aexit__(self, *args: Any) -> None:
+    async def __aexit__(self, *args: object) -> None:
         if self._client:
             await self._client.aclose()
 

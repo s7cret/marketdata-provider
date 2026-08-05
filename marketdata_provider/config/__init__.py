@@ -1,6 +1,8 @@
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from pathlib import Path
+
 from marketdata_provider.core.bar import RUNTIME_CONTRACT_VERSION
 from marketdata_provider.symbols import DEFAULT_STABLE_QUOTE_ASSETS
 

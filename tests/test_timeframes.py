@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+
 from marketdata_provider.timeframes import (
     close_time_ms,
     next_open_time_ms,

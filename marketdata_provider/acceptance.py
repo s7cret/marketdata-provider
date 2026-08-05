@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
+import itertools
 import json
 import os
 import socket
@@ -25,9 +26,9 @@ from marketdata_provider.config import BinanceConfig, BybitConfig
 from marketdata_provider.contracts import BarQuery, InstrumentKey, parse_timeframe
 from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.errors import (
+    MarketDataError,
     MDInvalidExchangeResponse,
     MDNetworkUnavailable,
-    MarketDataError,
 )
 from marketdata_provider.exchanges.binance.provider import binance_get_bars_sync
 from marketdata_provider.exchanges.binance.rest import normalize_binance_klines
@@ -186,7 +187,7 @@ def probe_live_rest(
         raise ValueError(f"unsupported exchange: {exchange}")
     if not bars:
         raise MDInvalidExchangeResponse(f"{exchange} REST returned no closed bars")
-    strictly_sorted = all(left.time < right.time for left, right in zip(bars, bars[1:]))
+    strictly_sorted = all(left.time < right.time for left, right in itertools.pairwise(bars))
     if not strictly_sorted:
         raise MDInvalidExchangeResponse(
             f"{exchange} REST bars are not strictly ordered"

@@ -4,6 +4,7 @@ from typing import Any
 
 import httpx
 import pytest
+from typing_extensions import Self
 
 from marketdata_provider.errors import (
     MDInvalidExchangeResponse,
@@ -53,7 +54,7 @@ class FakeClient:
     def __init__(self, **kwargs: object) -> None:
         assert kwargs["trust_env"] is False
 
-    def __enter__(self) -> "FakeClient":
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *args: object) -> None:

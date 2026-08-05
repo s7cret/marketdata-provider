@@ -4,28 +4,30 @@ import importlib.util
 import json
 import sqlite3
 import zipfile
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
-from dataclasses import replace
 
 import httpx
 import pytest
+from typing_extensions import Self
 
 from marketdata_provider.config import BinanceConfig, BybitConfig
-from marketdata_provider.core.bar import Bar, MarketBar, RUNTIME_CONTRACT_VERSION
+from marketdata_provider.core.bar import RUNTIME_CONTRACT_VERSION, Bar, MarketBar
 from marketdata_provider.errors import (
     MDInvalidExchangeResponse,
     MDNetworkUnavailable,
     MDPaginationStalled,
+    MDTimeframeUnsupported,
     MDUnsupportedFeature,
 )
 from marketdata_provider.exchanges.binance import archive as ba
 from marketdata_provider.exchanges.binance import provider as bp
-from marketdata_provider.exchanges.bybit import provider as yp
 from marketdata_provider.exchanges.binance.rest import (
     OfflineBinanceRestAdapter,
     normalize_binance_klines,
 )
+from marketdata_provider.exchanges.bybit import provider as yp
 from marketdata_provider.exchanges.bybit.rest import (
     OfflineBybitRestAdapter,
     normalize_bybit_klines,
@@ -85,10 +87,10 @@ class FakeClient:
             raise httpx.ConnectError("empty")
         return self.responses.pop(0)
 
-    def __enter__(self) -> "FakeClient":
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, *args: Any) -> None:
+    def __exit__(self, *args: object) -> None:
         pass
 
 
@@ -463,9 +465,8 @@ def test_segment_store_integrity_and_private_helpers(tmp_path: Path) -> None:
             exchange="binance", market="usdm", symbol="BTCUSDT", timeframe="1m"
         )
 
-    with pytest.raises(sqlite3.OperationalError):
-        with store._connect_index() as db:
-            db.execute("SELECT * FROM missing_table")
+    with pytest.raises(sqlite3.OperationalError), store._connect_index() as db:
+        db.execute("SELECT * FROM missing_table")
 
 
 def test_timeframe_mapping_edges() -> None:
@@ -475,7 +476,7 @@ def test_timeframe_mapping_edges() -> None:
     assert next_open_time_ms(0, "1m") == 60_000
     assert to_binance_interval("1h") == "1h"
     assert to_bybit_interval("1h") == "60"
-    with pytest.raises(Exception):
+    with pytest.raises(MDTimeframeUnsupported):
         timeframe_ms("bad")
 
 
@@ -531,6 +532,8 @@ def test_cache_raw_store_and_distribution_edges(
     from marketdata_provider.cache.local import read_cache_segment, write_cache_segment
     from marketdata_provider.distribution import (
         distribution_manifest,
+    )
+    from marketdata_provider.distribution import (
         main as distribution_main,
     )
     from marketdata_provider.store.raw_store import RawStore
@@ -594,8 +597,9 @@ def test_cache_raw_store_and_distribution_edges(
     )
     with pytest.raises(MDUnsupportedFeature, match="pyarrow"):
         SegmentStore(tmp_path / "segments-parquet", data_format="parquet")
-    from marketdata_provider.providers.offline import OfflineDataProvider
     import builtins
+
+    from marketdata_provider.providers.offline import OfflineDataProvider
 
     real_import = builtins.__import__
 
@@ -661,24 +665,24 @@ def test_cache_raw_store_and_distribution_edges(
 
 
 def test_factory_helper_boundaries(tmp_path: Path) -> None:
+    from marketdata_provider.config import (
+        MarketDataConfig,
+        OfflineDataConfig,
+        StorageConfig,
+    )
     from marketdata_provider.contracts.bar import Bar as ContractBar
     from marketdata_provider.contracts.instrument import InstrumentKey
     from marketdata_provider.contracts.query import BarQuery
     from marketdata_provider.contracts.series import BarSeries, CoverageReport
     from marketdata_provider.contracts.timeframe import parse_timeframe
     from marketdata_provider.factories import (
-        _CandleStoreAdapter,
         _can_bulk_write_closed,
+        _CandleStoreAdapter,
         _same_candle_payload,
         _series_write_error,
         _stored_bars_read_error,
         create_candle_store,
         create_provider,
-    )
-    from marketdata_provider.config import (
-        MarketDataConfig,
-        OfflineDataConfig,
-        StorageConfig,
     )
 
     instrument = InstrumentKey("binance", "usdm", "BTCUSDT")
@@ -762,16 +766,16 @@ def test_factory_helper_boundaries(tmp_path: Path) -> None:
 
 
 def test_service_aggregation_and_archive_helpers(tmp_path: Path) -> None:
+    from marketdata_provider.config import HistoryConfig, MarketDataConfig
     from marketdata_provider.contracts.instrument import InstrumentKey
     from marketdata_provider.contracts.query import BarQuery
     from marketdata_provider.contracts.timeframe import parse_timeframe
-    from marketdata_provider.config import HistoryConfig, MarketDataConfig
     from marketdata_provider.service import (
         _aggregate_market_bars,
-        _merge_bars,
-        _remaining_recent_query,
         _archive_cutoff_ms,
         _can_derive_from_base,
+        _merge_bars,
+        _remaining_recent_query,
     )
 
     q = BarQuery(
@@ -1243,6 +1247,7 @@ def test_compat_import_shims_and_adapter_edge_branches():
 
 def test_cache_checksum_mismatch_and_distribution_forbidden(tmp_path):
     import json
+
     from marketdata_provider.cache.local import (
         cache_segment_dir,
         read_cache_segment,

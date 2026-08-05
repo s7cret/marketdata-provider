@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Iterable, Sequence
+from collections.abc import Iterable, Sequence
+from typing import Any
 
 from marketdata_provider.errors import MDUnsupportedFeature
 from marketdata_provider.symbols import (
@@ -105,11 +106,7 @@ def normalize_public_spot_symbols(
     elif ex == "kraken":
         result = payload.get("result", {}) if isinstance(payload, dict) else {}
         rows = result.values() if isinstance(result, dict) else []
-    elif ex == "kucoin":
-        rows = payload.get("data", []) if isinstance(payload, dict) else []
-    elif ex == "bitget":
-        rows = payload.get("data", []) if isinstance(payload, dict) else []
-    elif ex == "htx":
+    elif ex == "kucoin" or ex == "bitget" or ex == "htx":
         rows = payload.get("data", []) if isinstance(payload, dict) else []
     elif ex == "mexc":
         rows = payload.get("symbols", []) if isinstance(payload, dict) else []
@@ -204,9 +201,7 @@ def _public_market_rows(exchange: str, payload: Any) -> Iterable[Any]:
         rows = payload.get("data", []) if isinstance(payload, dict) else []
     elif exchange == "kraken":
         rows = payload.get("instruments", []) if isinstance(payload, dict) else []
-    elif exchange == "kucoin":
-        rows = payload.get("data", []) if isinstance(payload, dict) else []
-    elif exchange == "mexc":
+    elif exchange == "kucoin" or exchange == "mexc":
         rows = payload.get("data", []) if isinstance(payload, dict) else []
     else:
         rows = payload if isinstance(payload, list) else []

@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
-from marketdata_provider.timeframes import next_open_time_ms
+
 from marketdata_provider.errors import MDPaginationStalled
+from marketdata_provider.timeframes import next_open_time_ms
 
 
 @dataclass(frozen=True, slots=True)

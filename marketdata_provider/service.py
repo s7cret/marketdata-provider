@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import replace
 from datetime import datetime, timezone
-from typing import Iterable, Protocol
+from typing import Protocol
 
 from marketdata_provider._adapters import series_from_market_bars
 from marketdata_provider.config import MarketDataConfig
-from marketdata_provider.contracts.query import BarQuery
 from marketdata_provider.contracts.errors import CoverageValidationError
+from marketdata_provider.contracts.query import BarQuery
 from marketdata_provider.contracts.series import BarSeries
 from marketdata_provider.contracts.timeframe import Timeframe, parse_timeframe
 from marketdata_provider.core.bar import Bar, MarketBar

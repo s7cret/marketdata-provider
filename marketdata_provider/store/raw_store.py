@@ -5,9 +5,10 @@ import importlib.util
 import json
 import os
 import tempfile
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterable, Literal
+from typing import Any, Literal
 
 from marketdata_provider._pathing import safe_path_part
 from marketdata_provider.errors import MDUnsupportedFeature
@@ -133,7 +134,7 @@ class RawStore:
         )
         manifest_path = d / "manifest.json"
         if not manifest_path.exists():
-            return list()
+            return []
         manifest = json.loads(manifest_path.read_text())
         data = self._decompress(
             (d / manifest["file_name"]).read_bytes(),

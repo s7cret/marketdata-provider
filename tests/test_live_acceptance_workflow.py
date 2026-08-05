@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-import marketdata_provider.acceptance as acceptance
+from marketdata_provider import acceptance
 from marketdata_provider.errors import MDInvalidExchangeResponse, MDNetworkUnavailable
 
 

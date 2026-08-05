@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Sequence, cast
+from collections.abc import Sequence
+from typing import Any, cast
 
 from marketdata_provider.config import BybitConfig
 from marketdata_provider.core.bar import MarketBar

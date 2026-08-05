@@ -6,7 +6,7 @@ from marketdata_provider.cache import (
     write_cache_segment,
 )
 from marketdata_provider.cli.main import main
-from marketdata_provider.core.bar import Bar, RUNTIME_CONTRACT_VERSION
+from marketdata_provider.core.bar import RUNTIME_CONTRACT_VERSION, Bar
 
 
 def _csv(path: Path) -> None:

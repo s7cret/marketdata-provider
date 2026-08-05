@@ -1,36 +1,38 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import AsyncIterator
 
+from marketdata_provider._adapters import (
+    contract_to_market_bar,
+    core_to_contract_bar,
+    series_from_core_bars,
+    series_from_market_bars,
+)
 from marketdata_provider.config import MarketDataConfig
-from marketdata_provider._adapters import contract_to_market_bar
-from marketdata_provider._adapters import core_to_contract_bar
-from marketdata_provider._adapters import series_from_core_bars
-from marketdata_provider._adapters import series_from_market_bars
-from marketdata_provider.contracts.events import LiveKlineEvent
 from marketdata_provider.contracts.errors import CoverageValidationError
+from marketdata_provider.contracts.events import LiveKlineEvent
+from marketdata_provider.contracts.footprint import FootprintQuery, FootprintSeries
 from marketdata_provider.contracts.instrument import InstrumentKey
 from marketdata_provider.contracts.protocols import CandleStore as CandleStoreProtocol
+from marketdata_provider.contracts.protocols import (
+    FootprintProvider as FootprintProviderProtocol,
+)
 from marketdata_provider.contracts.protocols import (
     LiveKlineClient as LiveKlineClientProtocol,
 )
 from marketdata_provider.contracts.protocols import (
     MarketDataProvider as MarketDataProviderProtocol,
 )
-from marketdata_provider.contracts.protocols import (
-    FootprintProvider as FootprintProviderProtocol,
-)
 from marketdata_provider.contracts.query import BarQuery
-from marketdata_provider.contracts.footprint import FootprintQuery, FootprintSeries
 from marketdata_provider.contracts.series import BarSeries, CoverageReport, StoreResult
 from marketdata_provider.contracts.timeframe import Timeframe, parse_timeframe
 from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.errors import MDUnsupportedFeature
 from marketdata_provider.exchanges.registry import list_exchanges
+from marketdata_provider.footprint.service import FootprintService
 from marketdata_provider.providers.offline import OfflineDataProvider
 from marketdata_provider.service import MarketDataService
-from marketdata_provider.footprint.service import FootprintService
 from marketdata_provider.store.candle_store import CandleStore as SegmentCandleStore
 from marketdata_provider.store.segment_checksums import market_bar_checksum
 

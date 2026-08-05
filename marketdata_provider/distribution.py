@@ -52,9 +52,7 @@ def _should_include(relative_path: Path) -> bool:
         return False
     if relative_path.name in {".coverage"} or relative_path.suffix in EXCLUDE_SUFFIXES:
         return False
-    if relative_path.name.endswith(ARCHIVE_SUFFIXES):
-        return False
-    return True
+    return not relative_path.name.endswith(ARCHIVE_SUFFIXES)
 
 
 def _is_forbidden_artifact(relative_path: Path) -> bool:

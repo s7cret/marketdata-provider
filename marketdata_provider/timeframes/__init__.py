@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 import calendar
 import re
 from datetime import datetime, timezone
+
 from marketdata_provider.errors import MDTimeframeUnsupported
 
 _FIXED_UNITS = {"s": 1000, "m": 60_000, "h": 3_600_000}
@@ -83,7 +85,7 @@ def canonical_timeframe(tf: str) -> str:
         return "1M"
     if raw.isdigit():
         return f"{int(raw)}m"
-    m = re.fullmatch(r"(\d+)([smhd])", raw, re.I)
+    m = re.fullmatch(r"(\d+)([smhd])", raw, re.IGNORECASE)
     if not m:
         raise MDTimeframeUnsupported(f"Unsupported timeframe: {tf}")
     n, unit = int(m.group(1)), m.group(2).lower()

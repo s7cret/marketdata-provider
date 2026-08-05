@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from marketdata_provider.cli.main import main
 from marketdata_provider.providers import OfflineDataProvider
 

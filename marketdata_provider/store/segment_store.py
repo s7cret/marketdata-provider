@@ -7,19 +7,22 @@ import os
 import sqlite3
 import tempfile
 import threading
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
-from typing import Iterable, Iterator, Literal
+from typing import ClassVar, Literal
 
 from marketdata_provider._pathing import safe_path_part
-from marketdata_provider.core.bar import MarketBar, RUNTIME_CONTRACT_VERSION
+from marketdata_provider.core.bar import RUNTIME_CONTRACT_VERSION, MarketBar
 from marketdata_provider.errors import (
     MDInvalidExchangeResponse,
     MDUnsupportedFeature,
 )
 from marketdata_provider.store.segment_append import (
     append_strictly_newer as append_segment_tail,
+)
+from marketdata_provider.store.segment_append import (
     recover_pending_appends,
     series_lock,
 )
@@ -28,13 +31,21 @@ from marketdata_provider.store.segment_checksums import (
     PERSISTED_MARKET_BAR_FIELDS,
     TAIL_CHAIN_CHECKSUM,
     bars_checksum,
+    market_bar_checksum,
 )
-from marketdata_provider.store.segment_checksums import (
-    market_bar_checksum as market_bar_checksum,
+from marketdata_provider.store.segment_csv import (
+    iter_csv_range,
+    read_csv,
+    seek_csv_near_start,
 )
-from marketdata_provider.store.segment_csv import iter_csv_range, read_csv, seek_csv_near_start
-from marketdata_provider.store.segment_manifest import SegmentManifest, load_segment_manifest
-from marketdata_provider.store.segment_maintenance import compact_segment, vacuum_segments
+from marketdata_provider.store.segment_maintenance import (
+    compact_segment,
+    vacuum_segments,
+)
+from marketdata_provider.store.segment_manifest import (
+    SegmentManifest,
+    load_segment_manifest,
+)
 from marketdata_provider.store.segment_read import iter_all as read_iter_all
 from marketdata_provider.store.segment_read import read_all as read_segment_all
 from marketdata_provider.store.segment_replace import (
@@ -59,7 +70,7 @@ class SegmentStore:
     so CSV and Parquet have identical integrity semantics.
     """
 
-    fields = list(PERSISTED_MARKET_BAR_FIELDS)
+    fields: ClassVar[list[str]] = list(PERSISTED_MARKET_BAR_FIELDS)
 
     def __init__(self, root: str | Path, *, data_format: SegmentFormat = "csv"):
         if data_format not in {"csv", "parquet"}:
@@ -223,7 +234,9 @@ class SegmentStore:
                 if replace_journal_path.exists():
                     recover_replacement_journal(self, replace_journal_path)
                 if journal_path.exists():
-                    from marketdata_provider.store.segment_append import recover_append_journal
+                    from marketdata_provider.store.segment_append import (
+                        recover_append_journal,
+                    )
 
                     recover_append_journal(self, journal_path)
                 yield

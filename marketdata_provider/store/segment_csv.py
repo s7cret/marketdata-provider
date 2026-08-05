@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Iterator, TextIO, cast
+from typing import Any, TextIO, cast
 
 from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.store.segment_rows import row_to_bar

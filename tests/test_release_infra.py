@@ -12,9 +12,12 @@ from marketdata_provider.pagination import PageRequest, next_cursor
 from marketdata_provider.quality import (
     architecture_report,
     duplicate_report,
+)
+from marketdata_provider.quality import (
     main as quality_main,
 )
-from marketdata_provider.release import main as release_main, release_report
+from marketdata_provider.release import main as release_main
+from marketdata_provider.release import release_report
 from marketdata_provider.transport.async_client import RetryConfig
 
 

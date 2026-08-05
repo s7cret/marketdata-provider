@@ -4,8 +4,9 @@ import asyncio
 import importlib.util
 import json
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import Any, AsyncIterator, Literal
+from typing import Any, Literal
 
 from marketdata_provider.errors import (
     MDNetworkUnavailable,

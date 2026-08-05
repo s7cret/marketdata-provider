@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 from collections.abc import Sequence
+
 from marketdata_provider.core.bar import Bar
 from marketdata_provider.errors import MDValidationError
 

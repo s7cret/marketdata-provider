@@ -5,10 +5,11 @@ import fcntl
 import io
 import json
 import os
+from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, replace
 from pathlib import Path
-from typing import Any, Iterable, Iterator, cast
+from typing import Any, cast
 
 from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.errors import (
@@ -21,8 +22,8 @@ from marketdata_provider.store.segment_checksums import (
     csv_canonical_checksum,
     extend_tail_chain,
     market_bar_checksum,
-    validate_persisted_bar_semantics,
     validate_csv_checksum,
+    validate_persisted_bar_semantics,
 )
 from marketdata_provider.store.segment_manifest import SegmentManifest
 from marketdata_provider.store.segment_rows import row_to_bar

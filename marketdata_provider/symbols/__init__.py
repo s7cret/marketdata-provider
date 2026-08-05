@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Any, Iterable, Sequence
+from typing import Any
 
 from marketdata_provider.errors import (
     MDInvalidExchangeResponse,
@@ -194,8 +195,7 @@ def quote_asset(
     raw = symbol.strip().upper()
     if ":" in raw:
         raw = raw.split(":", 1)[1]
-    if raw.endswith(".P"):
-        raw = raw[:-2]
+    raw = raw.removesuffix(".P")
     root = raw.split("_", 1)[0]
     for quote in sorted((q.upper() for q in quote_assets), key=len, reverse=True):
         if root.endswith(quote):
@@ -326,7 +326,7 @@ def _symbol_tuple(
     return symbol_text, base_text, quote_text
 
 
-from marketdata_provider.symbols.public_markets import (  # noqa: E402
+from marketdata_provider.symbols.public_markets import (
     _PUBLIC_SPOT_SYMBOL_ENDPOINTS,
     _QUERY_FIRST_PUBLIC_SPOT_EXCHANGES,
     _public_symbol_endpoint,
@@ -445,8 +445,9 @@ def search_symbols(
     limit: int | None = None,
     timeout: float = 10.0,
 ) -> list[SymbolInfo]:
-    from marketdata_provider.config import MarketDataConfig
     import httpx
+
+    from marketdata_provider.config import MarketDataConfig
 
     cfg = config or MarketDataConfig()
     symbols_cfg = cfg.symbols

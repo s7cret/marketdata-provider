@@ -74,6 +74,7 @@ def test_release_import_falls_back_to_tomli_without_stdlib_tomllib() -> None:
         cwd=Path.cwd(),
         capture_output=True,
         text=True,
+        check=False,
     )
 
     assert result.returncode == 0, result.stderr

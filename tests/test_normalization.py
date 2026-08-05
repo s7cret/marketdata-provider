@@ -1,4 +1,5 @@
 import pytest
+
 from marketdata_provider.errors import MDValidationError
 from marketdata_provider.exchanges.binance.rest import normalize_binance_klines
 from marketdata_provider.exchanges.bybit.rest import normalize_bybit_klines

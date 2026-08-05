@@ -3,12 +3,12 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable
 
 from marketdata_provider._pathing import safe_path_part
-from marketdata_provider.core.bar import Bar, RUNTIME_CONTRACT_VERSION
+from marketdata_provider.core.bar import RUNTIME_CONTRACT_VERSION, Bar
 from marketdata_provider.timeframes import canonical_timeframe
 from marketdata_provider.validation import validate_bars
 
