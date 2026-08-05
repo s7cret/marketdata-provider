@@ -13,7 +13,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10
 from marketdata_provider.distribution import distribution_manifest
 from marketdata_provider.quality import architecture_report, duplicate_report
 
-EXPECTED_VERSION = "4.0.0"
+EXPECTED_VERSION = "4.0.1"
 
 
 @dataclass(frozen=True)

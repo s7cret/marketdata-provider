@@ -1,52 +1,54 @@
 from __future__ import annotations
 
 import csv
-import hashlib
 import importlib.util
 import json
 import os
 import sqlite3
 import tempfile
-import time
+import threading
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from pathlib import Path
-from typing import Iterable, Iterator, Literal, cast
+from typing import Iterable, Iterator, Literal
 
 from marketdata_provider._pathing import safe_path_part
 from marketdata_provider.core.bar import MarketBar, RUNTIME_CONTRACT_VERSION
-from marketdata_provider.errors import MDInvalidExchangeResponse, MDUnsupportedFeature
+from marketdata_provider.errors import (
+    MDInvalidExchangeResponse,
+    MDUnsupportedFeature,
+)
+from marketdata_provider.store.segment_append import (
+    append_strictly_newer as append_segment_tail,
+    recover_pending_appends,
+    series_lock,
+)
 from marketdata_provider.store.segment_checksums import (
-    _update_checksum,
+    CANONICAL_CHECKSUM,
+    PERSISTED_MARKET_BAR_FIELDS,
+    TAIL_CHAIN_CHECKSUM,
     bars_checksum,
-    validate_csv_checksum,
 )
 from marketdata_provider.store.segment_checksums import (
     market_bar_checksum as market_bar_checksum,
 )
-from marketdata_provider.store.segment_csv import seek_csv_near_start
-from marketdata_provider.store.segment_rows import row_to_bar
+from marketdata_provider.store.segment_csv import iter_csv_range, read_csv, seek_csv_near_start
+from marketdata_provider.store.segment_manifest import SegmentManifest, load_segment_manifest
+from marketdata_provider.store.segment_maintenance import compact_segment, vacuum_segments
+from marketdata_provider.store.segment_read import iter_all as read_iter_all
+from marketdata_provider.store.segment_read import read_all as read_segment_all
+from marketdata_provider.store.segment_replace import (
+    begin_replacement,
+    finish_replacement,
+    recover_pending_replacements,
+    recover_replacement_journal,
+)
+from marketdata_provider.store.segment_rows import parse_bool, row_to_bar
+from marketdata_provider.store.segment_stream import replace_all_stream
 from marketdata_provider.timeframes import canonical_timeframe
 from marketdata_provider.validation import validate_bars
 
 SegmentFormat = Literal["csv", "parquet"]
-
-
-@dataclass(frozen=True, slots=True)
-class SegmentManifest:
-    runtime_contract_version: str
-    schema_version: str
-    exchange: str
-    market: str
-    symbol: str
-    timeframe: str
-    source_transport: str
-    source_kind: str
-    rows_count: int
-    start_time: int | None
-    end_time: int | None
-    checksum: str
-    data_format: str = "csv"
 
 
 class SegmentStore:
@@ -57,28 +59,7 @@ class SegmentStore:
     so CSV and Parquet have identical integrity semantics.
     """
 
-    fields = [
-        "time",
-        "open",
-        "high",
-        "low",
-        "close",
-        "volume",
-        "time_close",
-        "exchange",
-        "market",
-        "symbol",
-        "timeframe",
-        "quote_volume",
-        "turnover",
-        "trades_count",
-        "taker_buy_base_volume",
-        "taker_buy_quote_volume",
-        "source_transport",
-        "source_kind",
-        "is_closed",
-        "downloaded_at",
-    ]
+    fields = list(PERSISTED_MARKET_BAR_FIELDS)
 
     def __init__(self, root: str | Path, *, data_format: SegmentFormat = "csv"):
         if data_format not in {"csv", "parquet"}:
@@ -93,7 +74,10 @@ class SegmentStore:
         self.data_format: SegmentFormat = data_format
         self.root.mkdir(parents=True, exist_ok=True)
         self.index_path = self.root / "index.sqlite"
+        self._series_locks = threading.local()
         self._init_index()
+        self._recover_pending_appends()
+        recover_pending_replacements(self)
 
     @contextmanager
     def _connect_index(self) -> Iterator[sqlite3.Connection]:
@@ -203,6 +187,49 @@ class SegmentStore:
         suffix = "parquet" if fmt == "parquet" else "csv"
         return d / f"bars.{suffix}", d / "manifest.json"
 
+    @contextmanager
+    def series_writer_lock(
+        self,
+        *,
+        exchange: str,
+        market: str,
+        symbol: str,
+        timeframe: str,
+        source_kind: str = "trade_kline",
+    ) -> Iterator[None]:
+        """Serialize every mutation of one physical series across processes."""
+        directory = self._dir(
+            exchange=exchange,
+            market=market,
+            symbol=symbol,
+            timeframe=timeframe,
+            source_kind=source_kind,
+        )
+        directory.mkdir(parents=True, exist_ok=True)
+        lock_path = directory / ".writer.lock"
+        active = getattr(self._series_locks, "active", None)
+        if active is None:
+            active = set()
+            self._series_locks.active = active
+        key = str(lock_path.resolve())
+        if key in active:
+            yield
+            return
+        with series_lock(lock_path):
+            active.add(key)
+            journal_path = directory / ".append-journal.json"
+            replace_journal_path = directory / ".replace-journal.json"
+            try:
+                if replace_journal_path.exists():
+                    recover_replacement_journal(self, replace_journal_path)
+                if journal_path.exists():
+                    from marketdata_provider.store.segment_append import recover_append_journal
+
+                    recover_append_journal(self, journal_path)
+                yield
+            finally:
+                active.remove(key)
+
     def read_all(
         self,
         *,
@@ -214,60 +241,37 @@ class SegmentStore:
         start: int | None = None,
         end: int | None = None,
     ) -> list[MarketBar]:
-        manifest_path = (
-            self._dir(
-                exchange=exchange,
-                market=market,
-                symbol=symbol,
-                timeframe=timeframe,
-                source_kind=source_kind,
-            )
-            / "manifest.json"
-        )
-        fmt: SegmentFormat = self.data_format
-        manifest: dict[str, object] | None = None
-        if manifest_path.exists():
-            manifest = json.loads(manifest_path.read_text())
-            assert manifest is not None
-            raw_format = manifest.get("data_format", fmt)
-            if raw_format in {"csv", "parquet"}:
-                fmt = cast(SegmentFormat, raw_format)
-            self._validate_manifest_contract(manifest)
-        data_path, _ = self._paths(
+        key = {
+            "exchange": exchange,
+            "market": market,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "source_kind": source_kind,
+        }
+        with self.series_writer_lock(**key):
+            return self._read_all_locked(start=start, end=end, **key)
+
+    def _read_all_locked(
+        self,
+        *,
+        exchange: str,
+        market: str,
+        symbol: str,
+        timeframe: str,
+        source_kind: str = "trade_kline",
+        start: int | None = None,
+        end: int | None = None,
+    ) -> list[MarketBar]:
+        return read_segment_all(
+            self,
             exchange=exchange,
             market=market,
             symbol=symbol,
             timeframe=timeframe,
             source_kind=source_kind,
-            data_format=fmt,
+            start=start,
+            end=end,
         )
-        if not data_path.exists():
-            return list()
-        if fmt == "csv" and (start is not None or end is not None):
-            validate_csv_checksum(data_path, manifest)
-            bars = list(
-                self._iter_csv_range(data_path, start=start, end=end, manifest=manifest)
-            )
-            validate_bars([b.to_bar() for b in bars])
-            return bars
-        bars = (
-            self._read_parquet(data_path)
-            if fmt == "parquet"
-            else self._read_csv(data_path)
-        )
-        validate_bars([b.to_bar() for b in bars])
-        if manifest is not None:
-            actual = bars_checksum(bars)
-            if actual != manifest.get("checksum"):
-                raise MDInvalidExchangeResponse(
-                    "Segment checksum mismatch",
-                    details={"expected": manifest.get("checksum"), "actual": actual},
-                )
-        return [
-            b
-            for b in bars
-            if (start is None or b.time >= start) and (end is None or b.time < end)
-        ]
 
     def iter_all(
         self,
@@ -280,59 +284,15 @@ class SegmentStore:
         start: int | None = None,
         end: int | None = None,
     ) -> Iterator[MarketBar]:
-        manifest_path = (
-            self._dir(
-                exchange=exchange,
-                market=market,
-                symbol=symbol,
-                timeframe=timeframe,
-                source_kind=source_kind,
-            )
-            / "manifest.json"
-        )
-        fmt = self.data_format
-        manifest: dict[str, object] | None = None
-        if manifest_path.exists():
-            loaded_manifest = json.loads(manifest_path.read_text())
-            if not isinstance(loaded_manifest, dict):
-                raise MDInvalidExchangeResponse(
-                    "Segment manifest must be a JSON object"
-                )
-            manifest = cast(dict[str, object], loaded_manifest)
-            raw_format = manifest.get("data_format", fmt)
-            if raw_format in {"csv", "parquet"}:
-                fmt = cast(SegmentFormat, raw_format)
-            self._validate_manifest_contract(manifest)
-        data_path, _ = self._paths(
-            exchange=exchange,
-            market=market,
-            symbol=symbol,
-            timeframe=timeframe,
-            source_kind=source_kind,
-            data_format=fmt,
-        )
-        if not data_path.exists():
-            return
-        if fmt == "parquet":
-            for bar in self.read_all(
-                exchange=exchange,
-                market=market,
-                symbol=symbol,
-                timeframe=timeframe,
-                source_kind=source_kind,
-                start=start,
-                end=end,
-            ):
-                yield bar
-            return
-        range_manifest = manifest if manifest_path.exists() else None
-        validate_csv_checksum(data_path, range_manifest)
-        yield from self._iter_csv_range(
-            data_path,
-            start=start,
-            end=end,
-            manifest=range_manifest,
-        )
+        key = {
+            "exchange": exchange,
+            "market": market,
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "source_kind": source_kind,
+        }
+        with self.series_writer_lock(**key):
+            yield from read_iter_all(self, start=start, end=end, **key)
 
     def manifest_for(
         self,
@@ -343,19 +303,14 @@ class SegmentStore:
         timeframe: str,
         source_kind: str = "trade_kline",
     ) -> SegmentManifest | None:
-        manifest_path = (
-            self._dir(
-                exchange=exchange,
-                market=market,
-                symbol=symbol,
-                timeframe=timeframe,
-                source_kind=source_kind,
-            )
-            / "manifest.json"
+        return load_segment_manifest(
+            self,
+            exchange=exchange,
+            market=market,
+            symbol=symbol,
+            timeframe=timeframe,
+            source_kind=source_kind,
         )
-        if not manifest_path.exists():
-            return None
-        return SegmentManifest(**json.loads(manifest_path.read_text()))
 
     def latest_bar_time(
         self,
@@ -401,6 +356,34 @@ class SegmentStore:
         source_kind: str = "trade_kline",
         data_format: SegmentFormat | None = None,
     ) -> SegmentManifest:
+        with self.series_writer_lock(
+            exchange=exchange,
+            market=market,
+            symbol=symbol,
+            timeframe=timeframe,
+            source_kind=source_kind,
+        ):
+            return self._replace_all_locked(
+                bars,
+                exchange=exchange,
+                market=market,
+                symbol=symbol,
+                timeframe=timeframe,
+                source_kind=source_kind,
+                data_format=data_format,
+            )
+
+    def _replace_all_locked(
+        self,
+        bars: list[MarketBar],
+        *,
+        exchange: str,
+        market: str,
+        symbol: str,
+        timeframe: str,
+        source_kind: str = "trade_kline",
+        data_format: SegmentFormat | None = None,
+    ) -> SegmentManifest:
         fmt: SegmentFormat = data_format or self.data_format
         if fmt == "parquet" and importlib.util.find_spec("pyarrow") is None:
             raise MDUnsupportedFeature(
@@ -420,7 +403,7 @@ class SegmentStore:
         checksum = bars_checksum(bars)
         manifest = SegmentManifest(
             runtime_contract_version=RUNTIME_CONTRACT_VERSION,
-            schema_version=f"stage-d-{fmt}-1",
+            schema_version=f"stage-d-{fmt}-3",
             exchange=exchange.lower(),
             market=market.lower(),
             symbol=symbol.upper(),
@@ -432,25 +415,47 @@ class SegmentStore:
             end_time=bars[-1].time if bars else None,
             checksum=checksum,
             data_format=fmt,
+            checksum_algorithm=(
+                TAIL_CHAIN_CHECKSUM if fmt == "csv" else CANONICAL_CHECKSUM
+            ),
+            base_checksum=checksum if fmt == "csv" else None,
+            base_rows_count=len(bars) if fmt == "csv" else None,
+        )
+        old_manifest = self.manifest_for(
+            exchange=exchange,
+            market=market,
+            symbol=symbol,
+            timeframe=timeframe,
+            source_kind=source_kind,
+        )
+        old_data_path = None
+        if old_manifest is not None:
+            old_data_path, _ = self._paths(
+                exchange=exchange,
+                market=market,
+                symbol=symbol,
+                timeframe=timeframe,
+                source_kind=source_kind,
+                data_format=old_manifest.data_format,
+            )
+        downloaded_at = max((b.downloaded_at or 0) for b in bars) if bars else 0
+        journal_path = begin_replacement(
+            self,
+            old_manifest=old_manifest,
+            new_manifest=manifest,
+            old_data_path=old_data_path,
+            new_data_path=data_path,
+            downloaded_at=downloaded_at,
         )
         if fmt == "parquet":
             self._atomic_write_parquet(data_path, bars)
         else:
             self._atomic_write_csv(data_path, bars)
-        other = data_path.with_suffix(".csv" if fmt == "parquet" else ".parquet")
-        if other.exists():
-            other.unlink()
         self._atomic_write_text(
             manifest_path, json.dumps(asdict(manifest), sort_keys=True, indent=2) + "\n"
         )
-        with self._connect_index() as db:
-            db.execute("PRAGMA journal_mode=WAL")
-            self._delete_index_rows_for_series(db, manifest)
-            self._insert_index_row(
-                db,
-                manifest,
-                downloaded_at=max((b.downloaded_at or 0) for b in bars) if bars else 0,
-            )
+        self._replace_index_manifest(manifest, downloaded_at=downloaded_at)
+        finish_replacement(self, journal_path)
         return manifest
 
     def replace_all_stream(
@@ -463,75 +468,101 @@ class SegmentStore:
         timeframe: str,
         source_kind: str = "trade_kline",
     ) -> SegmentManifest:
-        data_path, manifest_path = self._paths(
+        with self.series_writer_lock(
             exchange=exchange,
             market=market,
             symbol=symbol,
             timeframe=timeframe,
             source_kind=source_kind,
-            data_format="csv",
-        )
-        data_path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(
-            prefix=f".{data_path.name}.", dir=str(data_path.parent)
-        )
-        digest = hashlib.sha256()
-        rows_count = 0
-        first: MarketBar | None = None
-        last: MarketBar | None = None
-        downloaded_at = 0
-        previous_time: int | None = None
-        try:
-            with os.fdopen(fd, "w", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=self.fields)
-                writer.writeheader()
-                for bar in bars:
-                    if previous_time is not None and bar.time <= previous_time:
-                        raise MDInvalidExchangeResponse(
-                            "Segment stream must be strictly ordered by time"
-                        )
-                    previous_time = bar.time
-                    validate_bars([bar.to_bar()])
-                    writer.writerow({name: getattr(bar, name) for name in self.fields})
-                    _update_checksum(digest, bar)
-                    rows_count += 1
-                    first = first or bar
-                    last = bar
-                    downloaded_at = max(downloaded_at, bar.downloaded_at or 0)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp, data_path)
-        finally:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
-        other = data_path.with_suffix(".parquet")
-        if other.exists():
-            other.unlink()
-        manifest = SegmentManifest(
-            runtime_contract_version=RUNTIME_CONTRACT_VERSION,
-            schema_version="stage-d-csv-1",
-            exchange=exchange.lower(),
-            market=market.lower(),
-            symbol=symbol.upper(),
-            timeframe=canonical_timeframe(timeframe),
-            source_transport=first.source_transport if first else "ws",
+        ):
+            return replace_all_stream(
+                self,
+                bars,
+                exchange=exchange,
+                market=market,
+                symbol=symbol,
+                timeframe=timeframe,
+                source_kind=source_kind,
+            )
+
+    def append_strictly_newer(
+        self,
+        bars: Iterable[MarketBar],
+        *,
+        exchange: str,
+        market: str,
+        symbol: str,
+        timeframe: str,
+        source_kind: str = "trade_kline",
+    ) -> SegmentManifest:
+        return append_segment_tail(
+            self,
+            bars,
+            exchange=exchange,
+            market=market,
+            symbol=symbol,
+            timeframe=timeframe,
             source_kind=source_kind,
-            rows_count=rows_count,
-            start_time=first.time if first else None,
-            end_time=last.time if last else None,
-            checksum=digest.hexdigest(),
-            data_format="csv",
         )
-        self._atomic_write_text(
-            manifest_path, json.dumps(asdict(manifest), sort_keys=True, indent=2) + "\n"
-        )
+
+    def _indexed_downloaded_at(self, manifest: SegmentManifest) -> int:
+        with self._connect_index() as db:
+            row = db.execute(
+                "SELECT COALESCE(MAX(downloaded_at), 0) FROM marketdata_segments "
+                "WHERE exchange=? AND market=? AND symbol=? AND timeframe=? AND source_kind=?",
+                (
+                    manifest.exchange,
+                    manifest.market,
+                    manifest.symbol,
+                    manifest.timeframe,
+                    manifest.source_kind,
+                ),
+            ).fetchone()
+        return int(row[0]) if row else 0
+
+    def _replace_index_manifest(
+        self, manifest: SegmentManifest, *, downloaded_at: int
+    ) -> None:
         with self._connect_index() as db:
             db.execute("PRAGMA journal_mode=WAL")
             self._delete_index_rows_for_series(db, manifest)
             self._insert_index_row(db, manifest, downloaded_at=downloaded_at)
-        return manifest
+
+    def _write_manifest_and_index(
+        self,
+        manifest: SegmentManifest,
+        *,
+        manifest_path: Path,
+        downloaded_at: int,
+    ) -> None:
+        self._atomic_write_text(
+            manifest_path, json.dumps(asdict(manifest), sort_keys=True, indent=2) + "\n"
+        )
+        self._replace_index_manifest(manifest, downloaded_at=downloaded_at)
+
+    def _recover_pending_appends(self) -> None:
+        recover_pending_appends(self)
+
+    @staticmethod
+    def _fsync_directory(path: Path) -> None:
+        fd = os.open(path, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
 
     def upsert_closed(self, bar: MarketBar) -> SegmentManifest:
+        key = {
+            "exchange": bar.exchange,
+            "market": bar.market,
+            "symbol": bar.symbol,
+            "timeframe": bar.timeframe,
+            "source_kind": bar.source_kind,
+        }
+        with self.series_writer_lock(**key):
+            return self._upsert_closed_locked(bar)
+
+    def _upsert_closed_locked(self, bar: MarketBar) -> SegmentManifest:
         existing = self.read_all(
             exchange=bar.exchange,
             market=bar.market,
@@ -539,9 +570,17 @@ class SegmentStore:
             timeframe=bar.timeframe,
             source_kind=bar.source_kind,
         )
-        by_time = {b.time: b for b in existing}
+        by_time = {item.time: item for item in existing}
+        current = by_time.get(bar.time)
+        if current is not None and market_bar_checksum(current) != market_bar_checksum(bar):
+            from marketdata_provider.errors import MDCacheConflict
+
+            raise MDCacheConflict(
+                "Conflicting closed candle",
+                details={"diagnostic": "MD_CACHE_CONFLICT", "time": bar.time},
+            )
         by_time[bar.time] = bar
-        return self.replace_all(
+        return self._replace_all_locked(
             list(by_time.values()),
             exchange=bar.exchange,
             market=bar.market,
@@ -550,91 +589,14 @@ class SegmentStore:
             source_kind=bar.source_kind,
         )
 
-    def vacuum(self) -> dict[str, int]:
-        removed = 0
-        for path in self.root.glob("v1/**/bars.*"):
-            manifest = path.parent / "manifest.json"
-            if not manifest.exists():
-                continue
-            fmt = json.loads(manifest.read_text()).get("data_format", "csv")
-            expected = path.parent / f"bars.{fmt}"
-            if path != expected:
-                path.unlink()
-                removed += 1
-        stale_before = time.time() - 3600
-        for pattern in ("v1/**/.bars.*", "v1/**/.manifest.json.*"):
-            for path in self.root.glob(pattern):
-                try:
-                    if path.is_file() and path.stat().st_mtime < stale_before:
-                        path.unlink()
-                        removed += 1
-                except FileNotFoundError:
-                    continue
-        with self._connect_index() as db:
-            db.execute("VACUUM")
-        return {"removed_stale_data_files": removed}
+    vacuum = vacuum_segments
+    compact = compact_segment
 
-    def compact(
-        self,
-        *,
-        exchange: str,
-        market: str,
-        symbol: str,
-        timeframe: str,
-        source_kind: str = "trade_kline",
-        data_format: SegmentFormat | None = None,
-    ) -> SegmentManifest:
-        bars = self.read_all(
-            exchange=exchange,
-            market=market,
-            symbol=symbol,
-            timeframe=timeframe,
-            source_kind=source_kind,
-        )
-        return self.replace_all(
-            bars,
-            exchange=exchange,
-            market=market,
-            symbol=symbol,
-            timeframe=timeframe,
-            source_kind=source_kind,
-            data_format=data_format,
-        )
+    _parse_bool = staticmethod(parse_bool)
+    _row_to_bar = staticmethod(row_to_bar)
 
-    @staticmethod
-    def _parse_bool(value: object, *, default: bool = True) -> bool:
-        from marketdata_provider.store.segment_rows import parse_bool
-
-        return parse_bool(value, default=default)
-
-    @staticmethod
-    def _row_to_bar(row: dict[str, object]) -> MarketBar:
-        return row_to_bar(row)
-
-    def _read_csv(self, path: Path) -> list[MarketBar]:
-        with path.open(newline="") as fh:
-            return [row_to_bar(r) for r in csv.DictReader(fh)]
-
-    def _iter_csv_range(
-        self,
-        path: Path,
-        *,
-        start: int | None,
-        end: int | None,
-        manifest: dict[str, object] | None = None,
-    ) -> Iterator[MarketBar]:
-        with path.open(newline="") as fh:
-            fieldnames = next(csv.reader([fh.readline()]))
-            if start is not None and manifest is not None:
-                self._seek_csv_near_start(fh, path, start=start, manifest=manifest)
-            reader = csv.DictReader(fh, fieldnames=fieldnames)
-            for row in reader:
-                bar = row_to_bar(row)
-                if start is not None and bar.time < start:
-                    continue
-                if end is not None and bar.time >= end:
-                    break
-                yield bar
+    _read_csv = staticmethod(read_csv)
+    _iter_csv_range = iter_csv_range
 
     def _validate_manifest_contract(self, manifest: dict[str, object]) -> None:
         if manifest.get("runtime_contract_version") != RUNTIME_CONTRACT_VERSION:
@@ -696,3 +658,4 @@ class SegmentStore:
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, path)
+        self._fsync_directory(path.parent)

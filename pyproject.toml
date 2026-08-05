@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "marketdata-provider"
-version = "4.0.0"
+version = "4.0.1"
 description = "Market data provider for normalized exchange OHLCV and cache workflows"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,7 +19,7 @@ Issues = "https://github.com/s7cret/marketdata-provider/issues"
 [project.optional-dependencies]
 dev = ["pytest>=7", "pytest-cov>=6", "mypy>=1.8", "ruff", "black>=24"]
 parquet = ["pyarrow>=14"]
-stream = ["websockets>=12"]
+stream = ["websockets>=12", "socksio>=1.0,<2"]
 zstd = ["zstandard>=0.22"]
 
 [project.scripts]

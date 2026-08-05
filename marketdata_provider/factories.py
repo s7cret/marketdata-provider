@@ -32,6 +32,7 @@ from marketdata_provider.providers.offline import OfflineDataProvider
 from marketdata_provider.service import MarketDataService
 from marketdata_provider.footprint.service import FootprintService
 from marketdata_provider.store.candle_store import CandleStore as SegmentCandleStore
+from marketdata_provider.store.segment_checksums import market_bar_checksum
 
 _NATIVE_EXCHANGE_IDS = {exchange.id for exchange in list_exchanges(native_only=True)}
 
@@ -174,54 +175,45 @@ class _CandleStoreAdapter:
 
     def _bulk_write_closed(self, bars: list[MarketBar]) -> int:
         first = bars[0]
-        existing = self.store.segments.read_all(
-            exchange=first.exchange,
-            market=first.market,
-            symbol=first.symbol,
-            timeframe=first.timeframe,
-            source_kind=first.source_kind,
-        )
-        by_time = {bar.time: bar for bar in existing}
-        rows_written = 0
-        for bar in bars:
-            current = by_time.get(bar.time)
-            if current is not None and not _same_candle_payload(current, bar):
-                raise ValueError(f"conflicting closed candle at {bar.time}")
-            if current is None:
-                rows_written += 1
-            by_time[bar.time] = bar
-        self.store.segments.replace_all(
-            list(by_time.values()),
-            exchange=first.exchange,
-            market=first.market,
-            symbol=first.symbol,
-            timeframe=first.timeframe,
-            source_kind=first.source_kind,
-        )
+        key = {
+            "exchange": first.exchange,
+            "market": first.market,
+            "symbol": first.symbol,
+            "timeframe": first.timeframe,
+            "source_kind": first.source_kind,
+        }
+        with self.store.segments.series_writer_lock(**key):
+            existing = self.store.segments.read_all(
+                exchange=first.exchange,
+                market=first.market,
+                symbol=first.symbol,
+                timeframe=first.timeframe,
+                source_kind=first.source_kind,
+            )
+            by_time = {bar.time: bar for bar in existing}
+            rows_written = 0
+            for bar in bars:
+                current = by_time.get(bar.time)
+                if current is not None and not _same_candle_payload(current, bar):
+                    raise ValueError(f"conflicting closed candle at {bar.time}")
+                if current is None:
+                    rows_written += 1
+                by_time[bar.time] = bar
+            self.store.segments._replace_all_locked(
+                list(by_time.values()),
+                exchange=first.exchange,
+                market=first.market,
+                symbol=first.symbol,
+                timeframe=first.timeframe,
+                source_kind=first.source_kind,
+            )
         return rows_written
 
 
 def _same_candle_payload(left: MarketBar, right: MarketBar) -> bool:
     """Return true when the candle data is identical regardless of provenance."""
 
-    return (
-        left.time == right.time
-        and left.time_close == right.time_close
-        and left.open == right.open
-        and left.high == right.high
-        and left.low == right.low
-        and left.close == right.close
-        and left.volume == right.volume
-        and left.exchange.lower() == right.exchange.lower()
-        and left.market.lower() == right.market.lower()
-        and left.symbol.upper() == right.symbol.upper()
-        and parse_timeframe(left.timeframe) == parse_timeframe(right.timeframe)
-        and left.source_kind == right.source_kind
-        and left.is_closed == right.is_closed
-        and left.quote_volume == right.quote_volume
-        and left.turnover == right.turnover
-        and left.trades_count == right.trades_count
-    )
+    return market_bar_checksum(left) == market_bar_checksum(right)
 
 
 def _series_write_error(series: BarSeries) -> str | None:

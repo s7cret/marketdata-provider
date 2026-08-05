@@ -9,19 +9,31 @@ from pathlib import Path
 
 EXCLUDE_PARTS = {
     ".git",
+    ".nox",
     ".mypy_cache",
     ".pytest_cache",
     ".ruff_cache",
+    ".tox",
+    ".venv",
     "__pycache__",
     "build",
     "dist",
     ".release_gate_reports",
     "htmlcov",
+    "venv",
 }
 EXCLUDE_SUFFIXES = {".pyc", ".pyo", ".coverage", ".log"}
 BUILD_ARTIFACT_PARTS = {"build", "dist"}
 ARCHIVE_SUFFIXES = (".whl", ".zip", ".tar.gz", ".tar.bz2", ".tar.xz")
 ARTIFACT_SCAN_IGNORE_PARTS = EXCLUDE_PARTS - BUILD_ARTIFACT_PARTS
+
+
+def _is_excluded_part(part: str, excluded: set[str]) -> bool:
+    return (
+        part in excluded
+        or part.endswith(".egg-info")
+        or part.startswith(".backup-")
+    )
 
 
 @dataclass(frozen=True)
@@ -34,7 +46,7 @@ class DistributionManifest:
 
 def _should_include(relative_path: Path) -> bool:
     if any(
-        part in EXCLUDE_PARTS or part.endswith(".egg-info")
+        _is_excluded_part(part, EXCLUDE_PARTS)
         for part in relative_path.parts
     ):
         return False
@@ -47,7 +59,7 @@ def _should_include(relative_path: Path) -> bool:
 
 def _is_forbidden_artifact(relative_path: Path) -> bool:
     if any(
-        part in ARTIFACT_SCAN_IGNORE_PARTS or part.endswith(".egg-info")
+        _is_excluded_part(part, ARTIFACT_SCAN_IGNORE_PARTS)
         for part in relative_path.parts
     ):
         return False

@@ -1,5 +1,12 @@
 # Changelog
 
+## 4.0.1
+
+- Added true bounded-memory strictly-newer CSV tail append without historical iteration or file replacement.
+- Added crash-recoverable append journals, tail-chain integrity manifests, legacy checksum migration, and deterministic duplicate/conflict handling.
+- Added separately scheduled/manual Binance and Bybit live-network acceptance canaries with timeout, DNS, network, and geo-restriction classification; the `stream` extra now includes SOCKS transport support for proxied runners.
+- Preserved 100% deterministic test coverage and the 700-line architecture budget through surgical storage-module extraction.
+
 ## 4.0.0
 
 - Added exchange registry CLI commands for native/planned exchanges and canonical market types.

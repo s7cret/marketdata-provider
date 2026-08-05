@@ -9,6 +9,7 @@ from marketdata_provider.config import (
     MarketDataConfig,
     StorageConfig,
 )
+from marketdata_provider.contracts.errors import CoverageValidationError
 from marketdata_provider.contracts.instrument import InstrumentKey
 from marketdata_provider.contracts.query import BarQuery
 from marketdata_provider.contracts.timeframe import parse_timeframe
@@ -338,6 +339,29 @@ def test_marketdata_service_streams_base_cache_for_derived_materialization(
     series = service.fetch_bars(_query("15m"))
 
     assert [bar.time for bar in series.bars] == [0, 900_000]
+
+
+def test_marketdata_service_rejects_incomplete_derived_materialization(
+    tmp_path, monkeypatch
+):
+    service = MarketDataService(
+        MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))
+    )
+    monkeypatch.setattr(service, "_stored_bars", lambda _query: [])
+    monkeypatch.setattr(service, "_ensure_stored", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        service,
+        "_aggregate_stored_base",
+        lambda *_args: _one_minute_bars(1),
+    )
+    monkeypatch.setattr(
+        service.store.segments,
+        "replace_all",
+        lambda *_args, **_kwargs: None,
+    )
+
+    with pytest.raises(CoverageValidationError, match="Derived bars"):
+        service.fetch_bars(_query("15m"))
 
 
 def test_candle_store_write_is_idempotent_across_provider_provenance(tmp_path):

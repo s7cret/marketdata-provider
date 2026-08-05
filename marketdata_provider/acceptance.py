@@ -7,6 +7,7 @@ import asyncio
 import csv
 import json
 import os
+import socket
 import tempfile
 import time
 from collections.abc import Callable
@@ -459,6 +460,70 @@ def _deterministic_integrity_checks() -> list[AcceptanceCheck]:
     ]
 
 
+def _failure_evidence(exc: BaseException) -> tuple[str, set[int], tuple[BaseException, ...]]:
+    """Collect bounded evidence from wrappers, structured details, and exception chains."""
+    pending: list[tuple[object, int]] = [(exc, 0)]
+    seen: set[int] = set()
+    text: list[str] = []
+    statuses: set[int] = set()
+    exceptions: list[BaseException] = []
+    while pending and len(seen) < 64:
+        value, depth = pending.pop()
+        identity = id(value)
+        if identity in seen or depth > 8:
+            continue
+        seen.add(identity)
+        if isinstance(value, BaseException):
+            exceptions.append(value)
+            text.extend((type(value).__name__, str(value)))
+            if isinstance(value, MarketDataError):
+                pending.append((value.details, depth + 1))
+            if value.__cause__ is not None:
+                pending.append((value.__cause__, depth + 1))
+            if value.__context__ is not None:
+                pending.append((value.__context__, depth + 1))
+        elif isinstance(value, dict):
+            for key, item in value.items():
+                text.append(str(key))
+                if key in {"status", "status_code"}:
+                    try:
+                        statuses.add(int(item))
+                    except (TypeError, ValueError):
+                        pass
+                pending.append((item, depth + 1))
+        elif isinstance(value, (list, tuple, set)):
+            pending.extend((item, depth + 1) for item in value)
+        elif value is not None:
+            text.append(str(value))
+    return " ".join(text).lower(), statuses, tuple(exceptions)
+
+
+def _classify_live_failure(exc: BaseException) -> str:
+    text, statuses, exceptions = _failure_evidence(exc)
+    if 451 in statuses or "http 451" in text or "legal reasons" in text or any(
+        marker in text
+        for marker in ("restricted location", "restricted country", "not available in your region")
+    ):
+        return "GEO_RESTRICTED"
+    if any(isinstance(item, (TimeoutError, asyncio.TimeoutError)) for item in exceptions) or any(
+        marker in text for marker in ("timed out", "timeout", "readtimeout", "connecttimeout")
+    ):
+        return "TIMEOUT"
+    if any(isinstance(item, socket.gaierror) for item in exceptions) or any(
+        marker in text
+        for marker in (
+            "name resolution",
+            "dns",
+            "getaddrinfo",
+            "nodename nor servname",
+        )
+    ):
+        return "DNS_FAILURE"
+    if any(isinstance(item, (MDNetworkUnavailable, OSError)) for item in exceptions):
+        return "NETWORK_UNAVAILABLE"
+    return "PROBE_FAILED"
+
+
 async def _run_live_check(
     capability: str, operation: Callable[[], Any]
 ) -> AcceptanceCheck:
@@ -469,7 +534,15 @@ async def _run_live_check(
         evidence = value if isinstance(value, dict) else {"result": value}
         return AcceptanceCheck(capability, bool(evidence), evidence)
     except Exception as exc:
-        return AcceptanceCheck(capability, False, {"attempted": True}, _error_text(exc))
+        return AcceptanceCheck(
+            capability,
+            False,
+            {
+                "attempted": True,
+                "failure_classification": _classify_live_failure(exc),
+            },
+            _error_text(exc),
+        )
 
 
 async def run_phase2_acceptance(

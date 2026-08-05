@@ -74,33 +74,54 @@ class CandleStore:
                 received_at=received_at,
                 raw_event_id=raw_event_id,
             )
-        existing = self.segments.get(
-            (
-                bar.exchange,
-                bar.market,
-                bar.symbol,
-                bar.timeframe,
-                bar.source_kind,
-                bar.time,
-            )
-        )
-        if existing is not None:
-            if market_bar_checksum(existing) == market_bar_checksum(bar):
+        segment_key = {
+            "exchange": bar.exchange,
+            "market": bar.market,
+            "symbol": bar.symbol,
+            "timeframe": bar.timeframe,
+            "source_kind": bar.source_kind,
+        }
+        with self.segments.series_writer_lock(**segment_key):
+            manifest = self.segments.manifest_for(**segment_key)
+            if (
+                manifest is not None
+                and manifest.data_format == "csv"
+                and manifest.end_time is not None
+                and bar.time > manifest.end_time
+            ):
+                self.segments.append_strictly_newer([bar], **segment_key)
                 self.current.delete_current(bar)
                 self._closed_checkpoint(
                     bar, event_time=event_time, received_at=received_at
                 )
-                return CommitResult("duplicate")
-            raise MDCacheConflict(
-                "Conflicting closed candle",
-                details={
-                    "diagnostic": "MD_CACHE_CONFLICT",
-                    "time": bar.time,
-                    "existing_checksum": market_bar_checksum(existing),
-                    "new_checksum": market_bar_checksum(bar),
-                },
+                return CommitResult("committed")
+            existing = self.segments.get(
+                (
+                    bar.exchange,
+                    bar.market,
+                    bar.symbol,
+                    bar.timeframe,
+                    bar.source_kind,
+                    bar.time,
+                )
             )
-        self.segments.upsert_closed(bar)
+            if existing is not None:
+                if market_bar_checksum(existing) == market_bar_checksum(bar):
+                    self.current.delete_current(bar)
+                    self._closed_checkpoint(
+                        bar, event_time=event_time, received_at=received_at
+                    )
+                    return CommitResult("duplicate")
+                raise MDCacheConflict(
+                    "Conflicting closed candle",
+                    details={
+                        "diagnostic": "MD_CACHE_CONFLICT",
+                        "time": bar.time,
+                        "existing_checksum": market_bar_checksum(existing),
+                        "new_checksum": market_bar_checksum(bar),
+                    },
+                )
+            self.segments._upsert_closed_locked(bar)
         self.current.delete_current(bar)
         self._closed_checkpoint(bar, event_time=event_time, received_at=received_at)
         return CommitResult("committed")

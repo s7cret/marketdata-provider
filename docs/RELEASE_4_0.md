@@ -12,7 +12,7 @@ The package provides market-data contracts, REST/archive/live-provider adapters,
 python -m compileall -q marketdata_provider tests
 python -m ruff check marketdata_provider tests scripts --select F,E9
 python -m mypy marketdata_provider
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q -p pytest_cov tests --cov=marketdata_provider --cov-report=term
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q -m "not live_network" -p pytest_cov tests --cov=marketdata_provider --cov-report=term
 python -m marketdata_provider.quality duplicates marketdata_provider
 python -m marketdata_provider.quality architecture marketdata_provider --max-lines 700
 python -m marketdata_provider.distribution manifest --root .

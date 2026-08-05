@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import nullcontext
 import json
 import runpy
 import warnings
@@ -281,7 +282,7 @@ def test_timeframe_symbols_and_small_utility_branches(
     assert _python_files(Path("missing")) == []
     assert duplicate_report(Path("missing")).duplicate_group_count == 0
     assert architecture_report(Path("missing")).oversized_count == 0
-    assert release_report(Path.cwd()).package_version == "4.0.0"
+    assert release_report(Path.cwd()).package_version == "4.0.1"
 
 
 class FakeResponse:
@@ -632,8 +633,9 @@ def test_factories_and_service_remaining_branches(
         def __init__(self) -> None:
             self.rows: list[MarketBar] = []
             self.segments = types.SimpleNamespace(
+                series_writer_lock=lambda **kwargs: nullcontext(),
                 read_all=lambda **kwargs: self.rows,
-                replace_all=lambda bars, **kwargs: self.rows.__setitem__(
+                _replace_all_locked=lambda bars, **kwargs: self.rows.__setitem__(
                     slice(None), bars
                 ),
             )
@@ -932,7 +934,7 @@ def test_segment_store_parquet_seek_and_service_helper_edges(
                         "trades_count": None,
                         "taker_buy_base_volume": None,
                         "taker_buy_quote_volume": None,
-                        "downloaded_at": 1,
+                        "downloaded_at": 60_000,
                     }
                 ]
             )

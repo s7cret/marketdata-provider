@@ -7,6 +7,7 @@ from typing import Iterable, Protocol
 from marketdata_provider._adapters import series_from_market_bars
 from marketdata_provider.config import MarketDataConfig
 from marketdata_provider.contracts.query import BarQuery
+from marketdata_provider.contracts.errors import CoverageValidationError
 from marketdata_provider.contracts.series import BarSeries
 from marketdata_provider.contracts.timeframe import Timeframe, parse_timeframe
 from marketdata_provider.core.bar import Bar, MarketBar
@@ -146,6 +147,10 @@ class MarketDataService:
                 return series_from_market_bars(query, bars, source="storage")
             self._ensure_stored(base_query, progress_callback=progress_callback)
             bars = self._stored_bars(base_query)
+            if bars and not _coverage_complete(bars, query):
+                raise CoverageValidationError(
+                    "Stored/provider bars do not cover every requested timestamp"
+                )
             return series_from_market_bars(query, bars, source="storage")
 
         derived = self._stored_bars(query)
@@ -159,25 +164,14 @@ class MarketDataService:
 
         derived = self._aggregate_stored_base(base_query, query)
         if derived:
-            existing = self.store.get_market_bars(
-                exchange=query.instrument.exchange,
-                market=query.instrument.market,
-                symbol=query.instrument.symbol,
-                timeframe=query.timeframe.canonical,
-            )
-            by_time = {bar.time: bar for bar in existing}
-            for bar in derived:
-                by_time[bar.time] = bar
-            self.store.segments.replace_all(
-                list(by_time.values()),
-                exchange=query.instrument.exchange,
-                market=query.instrument.market,
-                symbol=query.instrument.symbol,
-                timeframe=query.timeframe.canonical,
-            )
+            self._merge_derived_bars(query, derived)
             derived = self._stored_bars(query)
+            if not _coverage_complete(derived, query):
+                raise CoverageValidationError(
+                    "Derived bars do not cover every requested timestamp"
+                )
             return series_from_market_bars(query, derived, source="storage")
-        return series_from_market_bars(query, derived, source="storage")
+        return series_from_market_bars(query, [], source="storage")
 
     def precompute_bars(self, query: BarQuery) -> BarSeries:
         """Materialize derived bars before a batch run."""
@@ -220,13 +214,7 @@ class MarketDataService:
             }
         derived = self._aggregate_stored_base(base_query, query)
         if derived:
-            self.store.segments.replace_all(
-                derived,
-                exchange=query.instrument.exchange,
-                market=query.instrument.market,
-                symbol=query.instrument.symbol,
-                timeframe=query.timeframe.canonical,
-            )
+            self._merge_derived_bars(query, derived)
         return {
             "ok": self._stored_coverage_complete(query),
             "span_ok": self._stored_span_complete(query),
@@ -234,6 +222,44 @@ class MarketDataService:
             "bars_returned": 0,
             "rows_written": len(derived),
         }
+
+    def _merge_derived_bars(self, query: BarQuery, derived: list[MarketBar]) -> None:
+        """Merge derived bars under one series lock to prevent lost updates."""
+
+        if not derived:
+            return
+        source_kind = derived[0].source_kind
+        if any(bar.source_kind != source_kind for bar in derived):
+            raise CoverageValidationError("Derived bars cross source-kind boundaries")
+        exchange = query.instrument.exchange
+        market = query.instrument.market
+        symbol = query.instrument.symbol
+        timeframe = query.timeframe.canonical
+        with self.store.segments.series_writer_lock(
+            exchange=exchange,
+            market=market,
+            symbol=symbol,
+            timeframe=timeframe,
+            source_kind=source_kind,
+        ):
+            existing = self.store.segments._read_all_locked(
+                exchange=exchange,
+                market=market,
+                symbol=symbol,
+                timeframe=timeframe,
+                source_kind=source_kind,
+            )
+            by_time = {bar.time: bar for bar in existing}
+            for bar in derived:
+                by_time[bar.time] = bar
+            self.store.segments._replace_all_locked(
+                [by_time[item] for item in sorted(by_time)],
+                exchange=exchange,
+                market=market,
+                symbol=symbol,
+                timeframe=timeframe,
+                source_kind=source_kind,
+            )
 
     def _base_query(self, query: BarQuery) -> BarQuery:
         if not self.config.history.enabled:
@@ -265,8 +291,6 @@ class MarketDataService:
             timeframe=query.timeframe.canonical,
         )
         duration = query.timeframe.duration_ms
-        if self._manifest_spans(manifest, query, duration):
-            return False
         if (
             manifest is not None
             and manifest.end_time is not None
@@ -287,37 +311,39 @@ class MarketDataService:
         fetched = self._fetch_from_sources(query, progress_callback=progress_callback)
         if not fetched:
             return False
-        by_time = {bar.time: bar for bar in current}
-        for bar in fetched:
-            by_time[bar.time] = bar
-        self.store.segments.replace_all(
-            list(by_time.values()),
-            exchange=query.instrument.exchange,
-            market=query.instrument.market,
-            symbol=query.instrument.symbol,
-            timeframe=query.timeframe.canonical,
-        )
+        key = {
+            "exchange": query.instrument.exchange,
+            "market": query.instrument.market,
+            "symbol": query.instrument.symbol,
+            "timeframe": query.timeframe.canonical,
+        }
+        with self.store.segments.series_writer_lock(
+            exchange=key["exchange"],
+            market=key["market"],
+            symbol=key["symbol"],
+            timeframe=key["timeframe"],
+        ):
+            current = self.store.segments._read_all_locked(
+                exchange=key["exchange"],
+                market=key["market"],
+                symbol=key["symbol"],
+                timeframe=key["timeframe"],
+            )
+            by_time = {bar.time: bar for bar in current}
+            for bar in fetched:
+                by_time[bar.time] = bar
+            self.store.segments._replace_all_locked(
+                [by_time[item] for item in sorted(by_time)],
+                exchange=key["exchange"],
+                market=key["market"],
+                symbol=key["symbol"],
+                timeframe=key["timeframe"],
+            )
         return True
 
     def _append_stream(self, query: BarQuery, fetched_tail: list[MarketBar]) -> None:
-        by_time = {bar.time: bar for bar in fetched_tail}
-
-        def merged() -> Iterable[MarketBar]:
-            yielded: set[int] = set()
-            for bar in self.store.segments.iter_all(
-                exchange=query.instrument.exchange,
-                market=query.instrument.market,
-                symbol=query.instrument.symbol,
-                timeframe=query.timeframe.canonical,
-            ):
-                replacement = by_time.get(bar.time)
-                yield replacement or bar
-                yielded.add(bar.time)
-            for time in sorted(set(by_time) - yielded):
-                yield by_time[time]
-
-        self.store.segments.replace_all_stream(
-            merged(),
+        self.store.segments.append_strictly_newer(
+            fetched_tail,
             exchange=query.instrument.exchange,
             market=query.instrument.market,
             symbol=query.instrument.symbol,
@@ -337,20 +363,19 @@ class MarketDataService:
         duration = query.timeframe.duration_ms
         if duration is None:
             return False
-        manifest = self.store.segments.manifest_for(
+        expected = query.start_ms
+        for item in self.store.segments.iter_all(
             exchange=query.instrument.exchange,
             market=query.instrument.market,
             symbol=query.instrument.symbol,
             timeframe=query.timeframe.canonical,
-        )
-        if manifest is None or manifest.start_time is None or manifest.end_time is None:
-            return False
-        expected = ((query.end_ms - query.start_ms) + duration - 1) // duration
-        return (
-            manifest.start_time <= query.start_ms
-            and manifest.end_time >= query.end_ms - duration
-            and manifest.rows_count >= expected
-        )
+            start=query.start_ms,
+            end=query.end_ms,
+        ):
+            if item.time != expected:
+                return False
+            expected += duration
+        return expected >= query.end_ms
 
     @staticmethod
     def _manifest_spans(

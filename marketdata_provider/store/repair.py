@@ -10,6 +10,7 @@ from typing import Literal
 from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.providers import OfflineDataProvider
 from marketdata_provider.store.candle_store import CandleStore
+from marketdata_provider.store.segment_checksums import market_bar_checksum
 from marketdata_provider.timeframes import canonical_timeframe, close_time_ms
 
 RepairPolicy = Literal["strict", "non-strict"]
@@ -99,29 +100,7 @@ def load_repair_source(
 
 
 def _same_candle_values(a: MarketBar, b: MarketBar) -> bool:
-    return (
-        a.time,
-        a.time_close,
-        a.open,
-        a.high,
-        a.low,
-        a.close,
-        a.volume,
-        a.quote_volume,
-        a.turnover,
-        a.trades_count,
-    ) == (
-        b.time,
-        b.time_close,
-        b.open,
-        b.high,
-        b.low,
-        b.close,
-        b.volume,
-        b.quote_volume,
-        b.turnover,
-        b.trades_count,
-    )
+    return market_bar_checksum(a) == market_bar_checksum(b)
 
 
 def audit_against_source(
@@ -187,6 +166,39 @@ def repair_from_source(
     policy: RepairPolicy = "non-strict",
     log_path: str | Path | None = None,
 ) -> RepairLog:
+    key = {
+        "exchange": exchange,
+        "market": market,
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "source_kind": source_kind,
+    }
+    with store.segments.series_writer_lock(**key):
+        return _repair_from_source_locked(
+            store,
+            source_bars,
+            exchange=exchange,
+            market=market,
+            symbol=symbol,
+            timeframe=timeframe,
+            source_kind=source_kind,
+            policy=policy,
+            log_path=log_path,
+        )
+
+
+def _repair_from_source_locked(
+    store: CandleStore,
+    source_bars: list[MarketBar],
+    *,
+    exchange: str,
+    market: str,
+    symbol: str,
+    timeframe: str,
+    source_kind: str,
+    policy: RepairPolicy,
+    log_path: str | Path | None,
+) -> RepairLog:
     strict = policy == "strict"
     report = audit_against_source(
         store,
@@ -221,7 +233,7 @@ def repair_from_source(
             existing.pop(t)
             changed += 1
     if changed:
-        store.segments.replace_all(
+        store.segments._replace_all_locked(
             list(existing.values()),
             exchange=exchange,
             market=market,

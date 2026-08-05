@@ -21,7 +21,7 @@ REQUIRED_RELEASE_DOCS = (
 
 def _write_release_fixture(root: Path) -> None:
     (root / "pyproject.toml").write_text(
-        '[project]\nname = "marketdata-provider"\nversion = "4.0.0"\n',
+        '[project]\nname = "marketdata-provider"\nversion = "4.0.1"\n',
         encoding="utf-8",
     )
     (root / "marketdata_provider").mkdir()
@@ -116,3 +116,26 @@ def test_forbidden_artifact_scan_is_deterministic_and_ignores_metadata(
 
     assert manifest.file_count == 1
     assert manifest.forbidden == ["build/package.tar.gz", "marketdata-provider.zip"]
+
+
+def test_distribution_excludes_local_environments_and_backup_trees(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "package.py").write_text("value = 1\n", encoding="utf-8")
+    for relative_path in (
+        ".venv/lib/site-packages/dependency.py",
+        "venv/lib/site-packages/dependency.py",
+        ".tox/py/lib/package.py",
+        ".nox/tests/lib/package.py",
+        ".backup-stage-a/marketdata_provider/service.py",
+    ):
+        path = tmp_path / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("local-only\n", encoding="utf-8")
+
+    files = [path.relative_to(tmp_path).as_posix() for path in iter_files(tmp_path)]
+    manifest = distribution_manifest(tmp_path)
+
+    assert files == ["package.py"]
+    assert manifest.file_count == 1
+    assert manifest.forbidden_count == 0

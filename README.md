@@ -1,8 +1,8 @@
-# MarketData Provider 4.0.0
+# MarketData Provider 4.0.1
 
 > Normalized exchange market-data contracts, cache/storage workflows, archive adapters, and streaming helpers for OpenPine.
 
-[![Version](https://img.shields.io/badge/version-4.0.0-blue)](https://github.com/s7cret/marketdata-provider) [![Python](https://img.shields.io/badge/python-%3E%3D3.10-blue)](https://github.com/s7cret/marketdata-provider) [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/s7cret/marketdata-provider)
+[![Version](https://img.shields.io/badge/version-4.0.1-blue)](https://github.com/s7cret/marketdata-provider) [![Python](https://img.shields.io/badge/python-%3E%3D3.10-blue)](https://github.com/s7cret/marketdata-provider) [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/s7cret/marketdata-provider)
 
 
 **GitHub description:** MarketData Provider normalizes OHLCV, footprint, cache, archive, and live-streaming data for OpenPine, with native Binance/Bybit adapters and explicit exchange capability metadata.
@@ -24,7 +24,7 @@ Default tests are hermetic and do not require live external services.
 - Canonical `InstrumentKey`, `Timeframe`, `BarQuery`, `BarSeries`, and coverage contracts.
 - Normalized OHLCV bars from offline, cache, archive, REST, and streaming sources.
 - SQLite/segment-based candle, raw, footprint, current, checkpoint, and repair stores.
-- Binance and Bybit native adapters in the 4.0.0 line.
+- Binance and Bybit native adapters in the 4.0.1 line.
 - Exchange capability registry for native/planned adapter discovery.
 - Footprint aggregation foundations for trade-derived volume-at-price data.
 - Durable reconciliation and repair logs for cache health workflows.
@@ -32,7 +32,7 @@ Default tests are hermetic and do not require live external services.
 
 ## Exchange support
 
-| Exchange | 4.0.0 status | Native market types |
+| Exchange | 4.0.1 status | Native market types |
 |---|---|---|
 | Binance | Native adapter | `spot`, `usdm` |
 | Bybit | Native adapter | `spot`, `linear` |
@@ -56,7 +56,7 @@ python -m pip install -e '.[dev]'
 Install from GitHub tag:
 
 ```bash
-python -m pip install 'git+https://github.com/s7cret/marketdata-provider.git@v4.0.0'
+python -m pip install 'git+https://github.com/s7cret/marketdata-provider.git@v4.0.1'
 ```
 
 Optional extras:
@@ -145,7 +145,7 @@ marketdata_provider/
 python -m compileall -q marketdata_provider tests
 python -m ruff check marketdata_provider tests scripts --select F,E9
 python -m mypy marketdata_provider
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q -p pytest_cov tests --cov=marketdata_provider --cov-report=term
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q -m "not live_network" -p pytest_cov tests --cov=marketdata_provider --cov-report=term
 python -m marketdata_provider.quality duplicates marketdata_provider
 python -m marketdata_provider.quality architecture marketdata_provider --max-lines 700
 python -m marketdata_provider.distribution manifest --root .
@@ -160,7 +160,7 @@ bash scripts/smoke_import_parse.sh
 - `docs/ARCHITECTURE.md` — package boundary, hardening layout, exchange registry boundary.
 - `docs/EXCHANGES.md` — native adapters, top-10 exchange roadmap, canonical market types.
 - `docs/DEVELOPMENT.md` — local checks and exchange-registry smoke tests.
-- `docs/RELEASE_4_0.md` — 4.0.0 release gate and hardening notes.
+- `docs/RELEASE_4_0.md` — 4.0.1 release gate and hardening notes.
 
 ## License
 
