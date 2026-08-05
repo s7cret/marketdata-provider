@@ -585,7 +585,9 @@ class SegmentStore:
         )
         by_time = {item.time: item for item in existing}
         current = by_time.get(bar.time)
-        if current is not None and market_bar_checksum(current) != market_bar_checksum(bar):
+        if current is not None and market_bar_checksum(current) != market_bar_checksum(
+            bar
+        ):
             from marketdata_provider.errors import MDCacheConflict
 
             raise MDCacheConflict(

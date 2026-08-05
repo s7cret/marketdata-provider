@@ -120,7 +120,11 @@ def read_all(
             )
             validate_bars([bar.to_bar() for bar in bars])
             return bars
-    bars = store._read_parquet(data_path) if fmt == "parquet" else store._read_csv(data_path)
+    bars = (
+        store._read_parquet(data_path)
+        if fmt == "parquet"
+        else store._read_csv(data_path)
+    )
     validate_bars([bar.to_bar() for bar in bars])
     if manifest is not None and fmt == "parquet":
         actual = _parquet_checksum(bars, manifest)

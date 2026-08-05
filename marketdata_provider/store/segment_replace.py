@@ -39,11 +39,7 @@ def begin_replacement(
         "bars.parquet",
         None if old_data_path is None else old_data_path.name,
         new_data_path.name,
-        (
-            None
-            if old_data_path is None
-            else f"{BACKUP_NAME}{old_data_path.suffix}"
-        ),
+        (None if old_data_path is None else f"{BACKUP_NAME}{old_data_path.suffix}"),
     )
     if journal_path.exists():
         recover_replacement_journal(store, journal_path)
@@ -79,9 +75,7 @@ def begin_replacement(
 def finish_replacement(store: Any, journal_path: Path) -> None:
     """Remove the rollback generation after data, manifest and index commit."""
 
-    _, _, _, old_name, new_name, backup_name = _validated_journal(
-        store, journal_path
-    )
+    _, _, _, old_name, new_name, backup_name = _validated_journal(store, journal_path)
     if old_name is not None and old_name != new_name:
         (journal_path.parent / old_name).unlink(missing_ok=True)
     new_path = journal_path.parent / new_name
@@ -125,9 +119,7 @@ def recover_replacement_journal(store: Any, journal_path: Path) -> None:
 
     committed = current_manifest == asdict(new_manifest) and new_data_path.exists()
     if committed:
-        store._replace_index_manifest(
-            new_manifest, downloaded_at=new_downloaded_at
-        )
+        store._replace_index_manifest(new_manifest, downloaded_at=new_downloaded_at)
         finish_replacement(store, journal_path)
         return
 
@@ -140,7 +132,11 @@ def recover_replacement_journal(store: Any, journal_path: Path) -> None:
         with store._connect_index() as db:
             store._delete_index_rows_for_series(db, new_manifest)
     else:
-        if backup_path is not None and backup_path.exists() and old_data_path is not None:
+        if (
+            backup_path is not None
+            and backup_path.exists()
+            and old_data_path is not None
+        ):
             os.replace(backup_path, old_data_path)
             fsync_directory(directory)
         if old_data_path is None or not old_data_path.exists():
@@ -171,9 +167,7 @@ def _load_journal(path: Path) -> dict[str, object]:
     return cast(dict[str, object], payload)
 
 
-def _validated_journal(
-    store: Any, journal_path: Path
-) -> tuple[
+def _validated_journal(store: Any, journal_path: Path) -> tuple[
     dict[str, object],
     SegmentManifest | None,
     SegmentManifest,
@@ -184,7 +178,9 @@ def _validated_journal(
     journal = _load_journal(journal_path)
     try:
         old_raw = journal.get("old_manifest")
-        old_manifest = None if old_raw is None else SegmentManifest(**cast(Any, old_raw))
+        old_manifest = (
+            None if old_raw is None else SegmentManifest(**cast(Any, old_raw))
+        )
         new_manifest = SegmentManifest(**cast(Any, journal["new_manifest"]))
     except (KeyError, TypeError, ValueError) as exc:
         raise MDInvalidExchangeResponse("Invalid segment replacement journal") from exc
@@ -252,7 +248,9 @@ def _validate_journal_path(
         try:
             new_manifest = SegmentManifest(**cast(Any, journal["new_manifest"]))
         except (KeyError, TypeError, ValueError) as exc:
-            raise MDInvalidExchangeResponse("Invalid segment replacement journal") from exc
+            raise MDInvalidExchangeResponse(
+                "Invalid segment replacement journal"
+            ) from exc
     lexical_root = Path(os.path.abspath(store.root))
     lexical_directory = Path(os.path.abspath(journal_path.parent))
     try:
@@ -288,8 +286,7 @@ def _validate_manifest_identity(
         return
     fields = ("exchange", "market", "symbol", "timeframe", "source_kind")
     if any(
-        getattr(old_manifest, field) != getattr(new_manifest, field)
-        for field in fields
+        getattr(old_manifest, field) != getattr(new_manifest, field) for field in fields
     ):
         raise MDInvalidExchangeResponse(
             "Invalid segment replacement journal manifest identity"
@@ -330,7 +327,9 @@ def _journal_member_name(
 
 
 def _atomic_copy(source: Path, destination: Path) -> None:
-    fd, tmp_name = tempfile.mkstemp(prefix=f".{destination.name}.", dir=destination.parent)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{destination.name}.", dir=destination.parent
+    )
     try:
         with source.open("rb") as src, os.fdopen(fd, "wb") as dst:
             shutil.copyfileobj(src, dst, length=1024 * 1024)

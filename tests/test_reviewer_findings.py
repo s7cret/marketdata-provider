@@ -133,9 +133,7 @@ def test_duplicate_with_any_changed_persisted_field_is_rejected(
         store.append_strictly_newer([changed], **KEY)
 
 
-@pytest.mark.parametrize(
-    "field_name", sorted(set(PERSISTED_FIELD_CHANGES) - {"time"})
-)
+@pytest.mark.parametrize("field_name", sorted(set(PERSISTED_FIELD_CHANGES) - {"time"}))
 def test_bulk_and_repair_comparators_cover_every_persisted_field(
     field_name: str,
 ) -> None:
@@ -476,9 +474,7 @@ def test_replacement_journal_path_binding_rejects_symlink_malformed_and_wrong_di
         _validate_journal_path(store, journal)
     journal.unlink()
 
-    journal.write_text(
-        json.dumps({"version": "segment-replace-v1"}), encoding="utf-8"
-    )
+    journal.write_text(json.dumps({"version": "segment-replace-v1"}), encoding="utf-8")
     with pytest.raises(MDInvalidExchangeResponse, match="Invalid segment replacement"):
         _validate_journal_path(store, journal)
 
@@ -719,16 +715,21 @@ def test_presence_unaware_checksum_and_tail_chain_remain_readable() -> None:
     checksum = presence_unaware_bars_checksum([item])
 
     assert len(checksum) == 64
-    assert len(
-        extend_tail_chain(
-            checksum,
-            bar(60_000),
-            algorithm=PRESENCE_UNAWARE_TAIL_CHAIN_CHECKSUM,
+    assert (
+        len(
+            extend_tail_chain(
+                checksum,
+                bar(60_000),
+                algorithm=PRESENCE_UNAWARE_TAIL_CHAIN_CHECKSUM,
+            )
         )
-    ) == 64
+        == 64
+    )
 
 
-def test_bulk_and_direct_upsert_reject_conflicting_closed_candle(tmp_path: Path) -> None:
+def test_bulk_and_direct_upsert_reject_conflicting_closed_candle(
+    tmp_path: Path,
+) -> None:
     candle_store = CandleStore(tmp_path)
     original = bar(0)
     conflicting = bar(0, close=1.75)
@@ -757,7 +758,9 @@ def test_bulk_duplicate_comparator_includes_taker_buy_volumes(
     assert not _same_candle_payload(original, changed)
 
 
-def _run_thread(operation: Callable[[], object], errors: list[BaseException], done: threading.Event) -> None:
+def _run_thread(
+    operation: Callable[[], object], errors: list[BaseException], done: threading.Event
+) -> None:
     try:
         operation()
     except BaseException as exc:  # pragma: no branch - asserted by callers
@@ -796,9 +799,7 @@ def test_bulk_closed_write_holds_one_lock_across_read_merge_write(
         name="tail-appender",
         target=_run_thread,
         args=(
-            lambda: candle_store.segments.append_strictly_newer(
-                [bar(120_000)], **KEY
-            ),
+            lambda: candle_store.segments.append_strictly_newer([bar(120_000)], **KEY),
             errors,
             append_done,
         ),
@@ -889,11 +890,19 @@ def test_append_and_replace_are_serialized_with_append_first(
     monkeypatch.setattr(segment_append, "append_bytes", paused_append)
     append_thread = threading.Thread(
         target=_run_thread,
-        args=(lambda: store.append_strictly_newer([bar(60_000)], **KEY), errors, append_done),
+        args=(
+            lambda: store.append_strictly_newer([bar(60_000)], **KEY),
+            errors,
+            append_done,
+        ),
     )
     replace_thread = threading.Thread(
         target=_run_thread,
-        args=(lambda: store.replace_all([bar(0, close=1.7), bar(120_000)], **KEY), errors, replace_done),
+        args=(
+            lambda: store.replace_all([bar(0, close=1.7), bar(120_000)], **KEY),
+            errors,
+            replace_done,
+        ),
     )
 
     append_thread.start()
@@ -937,17 +946,27 @@ def test_two_appends_are_serialized_and_conflict_deterministically(
     monkeypatch.setattr(segment_append, "append_bytes", paused_first_append)
     first = threading.Thread(
         target=_run_thread,
-        args=(lambda: store.append_strictly_newer([bar(60_000)], **KEY), errors, first_done),
+        args=(
+            lambda: store.append_strictly_newer([bar(60_000)], **KEY),
+            errors,
+            first_done,
+        ),
     )
     second = threading.Thread(
         target=_run_thread,
-        args=(lambda: store.append_strictly_newer([bar(60_000, close=1.8)], **KEY), errors, second_done),
+        args=(
+            lambda: store.append_strictly_newer([bar(60_000, close=1.8)], **KEY),
+            errors,
+            second_done,
+        ),
     )
 
     first.start()
     assert first_entered.wait(2)
     second.start()
-    assert not second_done.wait(0.2), "second append bypassed the per-series writer lock"
+    assert not second_done.wait(
+        0.2
+    ), "second append bypassed the per-series writer lock"
     release_first.set()
     first.join(2)
     second.join(2)
@@ -1010,7 +1029,9 @@ async def test_provider_wrapped_transport_failures_keep_specific_classification(
 ) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if failure == "geo":
-            return httpx.Response(451, request=request, text="Unavailable For Legal Reasons")
+            return httpx.Response(
+                451, request=request, text="Unavailable For Legal Reasons"
+            )
         if failure == "dns":
             try:
                 raise OSError("temporary failure in name resolution")
@@ -1080,12 +1101,16 @@ def _v2_bars_checksum(items: list[MarketBar]) -> str:
                 item.volume,
                 item.quote_volume if item.quote_volume is not None else 0.0,
                 item.turnover if item.turnover is not None else 0.0,
-                item.taker_buy_base_volume
-                if item.taker_buy_base_volume is not None
-                else 0.0,
-                item.taker_buy_quote_volume
-                if item.taker_buy_quote_volume is not None
-                else 0.0,
+                (
+                    item.taker_buy_base_volume
+                    if item.taker_buy_base_volume is not None
+                    else 0.0
+                ),
+                (
+                    item.taker_buy_quote_volume
+                    if item.taker_buy_quote_volume is not None
+                    else 0.0
+                ),
                 item.quote_volume is not None,
                 item.turnover is not None,
                 item.taker_buy_base_volume is not None,
@@ -1137,7 +1162,9 @@ def test_metadata_only_manifest_migration_is_journaled_and_recovers_index(
     payload["checksum"] = legacy_bars_checksum(items)
     manifest_path.write_text(json.dumps(payload), encoding="utf-8")
     with sqlite3.connect(store.index_path) as db:
-        db.execute("UPDATE marketdata_segments SET checksum = ?", (payload["checksum"],))
+        db.execute(
+            "UPDATE marketdata_segments SET checksum = ?", (payload["checksum"],)
+        )
         db.commit()
 
     monkeypatch.setattr(
@@ -1204,9 +1231,7 @@ def test_append_dispatches_pending_journal_recovery(tmp_path: Path) -> None:
 
 
 def test_tail_chain_legacy_and_unsupported_algorithm_branches() -> None:
-    digest = extend_tail_chain(
-        "0" * 64, bar(0), algorithm=LEGACY_TAIL_CHAIN_CHECKSUM
-    )
+    digest = extend_tail_chain("0" * 64, bar(0), algorithm=LEGACY_TAIL_CHAIN_CHECKSUM)
     assert len(digest) == 64
     with pytest.raises(MDInvalidExchangeResponse, match="Unsupported"):
         extend_tail_chain("0" * 64, bar(0), algorithm="unknown")

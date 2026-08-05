@@ -187,7 +187,9 @@ def probe_live_rest(
         raise ValueError(f"unsupported exchange: {exchange}")
     if not bars:
         raise MDInvalidExchangeResponse(f"{exchange} REST returned no closed bars")
-    strictly_sorted = all(left.time < right.time for left, right in itertools.pairwise(bars))
+    strictly_sorted = all(
+        left.time < right.time for left, right in itertools.pairwise(bars)
+    )
     if not strictly_sorted:
         raise MDInvalidExchangeResponse(
             f"{exchange} REST bars are not strictly ordered"
@@ -461,7 +463,9 @@ def _deterministic_integrity_checks() -> list[AcceptanceCheck]:
     ]
 
 
-def _failure_evidence(exc: BaseException) -> tuple[str, set[int], tuple[BaseException, ...]]:
+def _failure_evidence(
+    exc: BaseException,
+) -> tuple[str, set[int], tuple[BaseException, ...]]:
     """Collect bounded evidence from wrappers, structured details, and exception chains."""
     pending: list[tuple[object, int]] = [(exc, 0)]
     seen: set[int] = set()
@@ -501,13 +505,25 @@ def _failure_evidence(exc: BaseException) -> tuple[str, set[int], tuple[BaseExce
 
 def _classify_live_failure(exc: BaseException) -> str:
     text, statuses, exceptions = _failure_evidence(exc)
-    if 451 in statuses or "http 451" in text or "legal reasons" in text or any(
-        marker in text
-        for marker in ("restricted location", "restricted country", "not available in your region")
+    if (
+        451 in statuses
+        or "http 451" in text
+        or "legal reasons" in text
+        or any(
+            marker in text
+            for marker in (
+                "restricted location",
+                "restricted country",
+                "not available in your region",
+            )
+        )
     ):
         return "GEO_RESTRICTED"
-    if any(isinstance(item, (TimeoutError, asyncio.TimeoutError)) for item in exceptions) or any(
-        marker in text for marker in ("timed out", "timeout", "readtimeout", "connecttimeout")
+    if any(
+        isinstance(item, (TimeoutError, asyncio.TimeoutError)) for item in exceptions
+    ) or any(
+        marker in text
+        for marker in ("timed out", "timeout", "readtimeout", "connecttimeout")
     ):
         return "TIMEOUT"
     if any(isinstance(item, socket.gaierror) for item in exceptions) or any(

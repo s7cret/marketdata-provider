@@ -137,7 +137,10 @@ def test_empty_legacy_duplicate_and_tail_shape_edges(tmp_path: Path) -> None:
     wrong = replace(bar(60_000), symbol="ETHUSDT")
     with pytest.raises(MDInvalidExchangeResponse, match="identity"):
         identity.append_strictly_newer([wrong], **KEY)
-    assert identity.append_strictly_newer([bar(60_000), bar(60_000)], **KEY).rows_count == 2
+    assert (
+        identity.append_strictly_newer([bar(60_000), bar(60_000)], **KEY).rows_count
+        == 2
+    )
 
 
 def test_checksum_and_csv_tail_guards(tmp_path: Path) -> None:
@@ -180,7 +183,9 @@ def test_recovery_committed_invalid_and_truncated_journals(
     store.replace_all([bar(0), bar(60_000)], **KEY)
     original_unlink = Path.unlink
 
-    def crash_before_journal_cleanup(path: Path, *args: object, **kwargs: object) -> None:
+    def crash_before_journal_cleanup(
+        path: Path, *args: object, **kwargs: object
+    ) -> None:
         if path.name == ".append-journal.json":
             raise BaseException("simulated death after commit")  # noqa: TRY002
         original_unlink(path, *args, **kwargs)
@@ -198,7 +203,9 @@ def test_recovery_committed_invalid_and_truncated_journals(
     invalid_dir = invalid_root / "v1" / "series"
     invalid_dir.mkdir(parents=True)
     (invalid_dir / ".append-journal.json").write_text("{}", encoding="utf-8")
-    with pytest.raises(MDInvalidExchangeResponse, match="Invalid segment append journal"):
+    with pytest.raises(
+        MDInvalidExchangeResponse, match="Invalid segment append journal"
+    ):
         SegmentStore(invalid_root)
 
     truncated_root = tmp_path / "truncated"
@@ -225,7 +232,9 @@ def test_recovery_committed_invalid_and_truncated_journals(
 def test_dns_and_parquet_checksum_failure_classification(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    assert _classify_live_failure(socket.gaierror("getaddrinfo failed")) == "DNS_FAILURE"
+    assert (
+        _classify_live_failure(socket.gaierror("getaddrinfo failed")) == "DNS_FAILURE"
+    )
 
     store = SegmentStore(tmp_path)
     manifest = store.replace_all([bar(0)], **KEY)
@@ -249,7 +258,10 @@ def test_dns_and_parquet_checksum_failure_classification(
             {"checksum_algorithm": PRESENCE_UNAWARE_CANONICAL_CHECKSUM},
             PRESENCE_UNAWARE_CANONICAL_CHECKSUM,
         ),
-        ({"checksum_algorithm": LEGACY_TAIL_CHAIN_CHECKSUM}, LEGACY_TAIL_CHAIN_CHECKSUM),
+        (
+            {"checksum_algorithm": LEGACY_TAIL_CHAIN_CHECKSUM},
+            LEGACY_TAIL_CHAIN_CHECKSUM,
+        ),
         (
             {"checksum_algorithm": PRESENCE_UNAWARE_TAIL_CHAIN_CHECKSUM},
             PRESENCE_UNAWARE_TAIL_CHAIN_CHECKSUM,
@@ -352,7 +364,11 @@ def test_replacement_helpers_cover_recovery_and_copy_faults(
     assert destination.read_bytes() == b"payload"
 
     with monkeypatch.context() as scoped:
-        scoped.setattr(segment_replace.os, "replace", lambda *_args: (_ for _ in ()).throw(OSError("replace")))
+        scoped.setattr(
+            segment_replace.os,
+            "replace",
+            lambda *_args: (_ for _ in ()).throw(OSError("replace")),
+        )
         with pytest.raises(OSError, match="replace"):
             _atomic_copy(source, tmp_path / "failed.bin")
 

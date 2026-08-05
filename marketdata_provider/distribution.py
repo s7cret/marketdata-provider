@@ -29,11 +29,7 @@ ARTIFACT_SCAN_IGNORE_PARTS = EXCLUDE_PARTS - BUILD_ARTIFACT_PARTS
 
 
 def _is_excluded_part(part: str, excluded: set[str]) -> bool:
-    return (
-        part in excluded
-        or part.endswith(".egg-info")
-        or part.startswith(".backup-")
-    )
+    return part in excluded or part.endswith(".egg-info") or part.startswith(".backup-")
 
 
 @dataclass(frozen=True)
@@ -45,10 +41,7 @@ class DistributionManifest:
 
 
 def _should_include(relative_path: Path) -> bool:
-    if any(
-        _is_excluded_part(part, EXCLUDE_PARTS)
-        for part in relative_path.parts
-    ):
+    if any(_is_excluded_part(part, EXCLUDE_PARTS) for part in relative_path.parts):
         return False
     if relative_path.name in {".coverage"} or relative_path.suffix in EXCLUDE_SUFFIXES:
         return False

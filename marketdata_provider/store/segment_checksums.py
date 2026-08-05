@@ -118,7 +118,9 @@ def extend_tail_chain(
         raise MDInvalidExchangeResponse(
             "Unsupported segment checksum algorithm", details={"algorithm": algorithm}
         )
-    return hashlib.sha256(algorithm.encode("ascii") + b"\0" + previous + row_digest).hexdigest()
+    return hashlib.sha256(
+        algorithm.encode("ascii") + b"\0" + previous + row_digest
+    ).hexdigest()
 
 
 def validate_csv_checksum(path: Path, manifest: dict[str, object] | None) -> None:

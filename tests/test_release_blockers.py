@@ -89,6 +89,15 @@ def test_python_310_declares_tomli_runtime_dependency() -> None:
     assert "tomli>=2; python_version < '3.11'" in project_section
 
 
+def test_async_client_declares_typing_extensions_runtime_dependency() -> None:
+    project_config = Path("pyproject.toml").read_text(encoding="utf-8")
+    project_section = project_config.split("[project]", 1)[1].split(
+        "[project.urls]", 1
+    )[0]
+
+    assert "typing-extensions>=4.0" in project_section
+
+
 def test_release_report_fails_when_dist_contains_build_artifact(tmp_path: Path) -> None:
     _write_release_fixture(tmp_path)
     artifact = tmp_path / "dist" / "artifact.whl"

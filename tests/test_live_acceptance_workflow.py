@@ -39,7 +39,9 @@ def test_live_acceptance_workflow_is_scheduled_manual_bounded_and_separate() -> 
     assert "workflow_dispatch:" in workflow
     assert "timeout-minutes: 10" in workflow
     assert 'python -m pip install -e ".[dev,stream]"' in workflow
-    assert "timeout 330s python -m marketdata_provider.acceptance --mode live" in workflow
+    assert (
+        "timeout 330s python -m marketdata_provider.acceptance --mode live" in workflow
+    )
     assert "--timeout 15" in workflow
     assert "live-acceptance-report" in workflow
     assert "if-no-files-found: error" in workflow

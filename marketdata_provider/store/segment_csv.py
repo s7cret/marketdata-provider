@@ -13,8 +13,7 @@ from marketdata_provider.timeframes import timeframe_ms
 def read_csv(path: Path) -> list[MarketBar]:
     with path.open(newline="") as handle:
         return [
-            row_to_bar(cast(dict[str, object], row))
-            for row in csv.DictReader(handle)
+            row_to_bar(cast(dict[str, object], row)) for row in csv.DictReader(handle)
         ]
 
 

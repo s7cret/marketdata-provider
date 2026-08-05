@@ -99,7 +99,9 @@ def append_strictly_newer(
 
         last = read_last_csv_bar(data_path)
         if manifest.rows_count <= 0 or manifest.end_time is None or last is None:
-            raise MDInvalidExchangeResponse("Cannot append to an empty segment manifest")
+            raise MDInvalidExchangeResponse(
+                "Cannot append to an empty segment manifest"
+            )
         if last.time != manifest.end_time:
             raise MDInvalidExchangeResponse(
                 "Segment tail does not match manifest end_time",
@@ -225,7 +227,8 @@ def validated_append_bars(
         )
         if actual != expected:
             raise MDInvalidExchangeResponse(
-                "Append candle identity does not match segment", details={"time": bar.time}
+                "Append candle identity does not match segment",
+                details={"time": bar.time},
             )
         validate_bars([bar.to_bar()])
         if normalized and bar.time < normalized[-1].time:
@@ -303,7 +306,10 @@ def recover_pending_appends(store: Any) -> None:
 def recover_append_journal(store: Any, journal_path: Path) -> None:
     try:
         journal = json.loads(journal_path.read_text(encoding="utf-8"))
-        if not isinstance(journal, dict) or journal.get("version") != "segment-append-v1":
+        if (
+            not isinstance(journal, dict)
+            or journal.get("version") != "segment-append-v1"
+        ):
             raise ValueError("unsupported append journal version")
         old_manifest = SegmentManifest(**journal["old_manifest"])
         new_manifest = SegmentManifest(**journal["new_manifest"])
@@ -321,9 +327,8 @@ def recover_append_journal(store: Any, journal_path: Path) -> None:
         loaded = json.loads(manifest_path.read_text(encoding="utf-8"))
         if isinstance(loaded, dict):
             current_manifest = cast(dict[str, object], loaded)
-    committed = (
-        data_path.stat().st_size == size_after
-        and current_manifest == asdict(new_manifest)
+    committed = data_path.stat().st_size == size_after and current_manifest == asdict(
+        new_manifest
     )
     if committed:
         store._replace_index_manifest(new_manifest, downloaded_at=downloaded_at)

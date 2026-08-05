@@ -238,9 +238,7 @@ def test_incremental_append_duplicate_conflict_and_ordering(tmp_path: Path) -> N
     with pytest.raises(MDInvalidExchangeResponse, match="strictly ordered"):
         store.append_strictly_newer([bar(180_000), bar(120_000)], **KEY)
     with pytest.raises(MDCacheConflict, match="Conflicting append candle"):
-        store.append_strictly_newer(
-            [bar(120_000), bar(120_000, close=8.0)], **KEY
-        )
+        store.append_strictly_newer([bar(120_000), bar(120_000, close=8.0)], **KEY)
 
 
 def test_append_recovers_data_manifest_and_index_after_manifest_write_crash(
@@ -313,7 +311,12 @@ def test_legacy_manifest_is_validated_once_then_migrated_without_rewrite(
     assert second.checksum_algorithm == "sha256-tail-chain-v3"
     assert second.base_checksum == bars_checksum([bar(0), bar(60_000)])
     assert second.base_rows_count == legacy.rows_count
-    assert [item.time for item in store.read_all(**KEY)] == [0, 60_000, 120_000, 180_000]
+    assert [item.time for item in store.read_all(**KEY)] == [
+        0,
+        60_000,
+        120_000,
+        180_000,
+    ]
 
 
 def test_legacy_manifest_corruption_blocks_migration_and_append(tmp_path: Path) -> None:
@@ -349,7 +352,9 @@ def test_tail_chain_detects_base_and_appended_corruption(tmp_path: Path) -> None
         for _ in range(occurrence):
             cursor = content.find(needle, cursor + 1)
         assert cursor >= 0
-        data_path.write_bytes(content[:cursor] + b",1.6," + content[cursor + len(needle) :])
+        data_path.write_bytes(
+            content[:cursor] + b",1.6," + content[cursor + len(needle) :]
+        )
 
         with pytest.raises(MDInvalidExchangeResponse, match="checksum mismatch"):
             store.read_all(**KEY)
