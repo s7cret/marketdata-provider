@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.0.2
+
+- Removed repeated full-file checksum scans and duplicate persistence from online hot paths.
+- Added canonical candle comparison, keyed single-flight reads, bounded range reads, and crash-safe integrity generations.
+- Added regression coverage for large-cache tail reads, duplicate batches, concurrent fetches, and recovery behavior.
+
 ## 4.0.1
 
 - Added true bounded-memory strictly-newer CSV tail append without historical iteration or file replacement.

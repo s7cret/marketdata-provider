@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "marketdata-provider"
-version = "4.0.1"
+version = "4.0.2"
 description = "Market data provider for normalized exchange OHLCV and cache workflows"
 readme = "README.md"
 requires-python = ">=3.10"
