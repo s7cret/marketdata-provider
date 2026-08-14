@@ -10,7 +10,7 @@ from typing import Literal
 from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.providers import OfflineDataProvider
 from marketdata_provider.store.candle_store import CandleStore
-from marketdata_provider.store.segment_checksums import market_bar_checksum
+from marketdata_provider.store.segment_checksums import same_canonical_candle
 from marketdata_provider.timeframes import canonical_timeframe, close_time_ms
 
 RepairPolicy = Literal["strict", "non-strict"]
@@ -100,7 +100,7 @@ def load_repair_source(
 
 
 def _same_candle_values(a: MarketBar, b: MarketBar) -> bool:
-    return market_bar_checksum(a) == market_bar_checksum(b)
+    return same_canonical_candle(a, b)
 
 
 def audit_against_source(

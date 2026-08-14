@@ -34,7 +34,7 @@ from marketdata_provider.footprint.service import FootprintService
 from marketdata_provider.providers.offline import OfflineDataProvider
 from marketdata_provider.service import MarketDataService
 from marketdata_provider.store.candle_store import CandleStore as SegmentCandleStore
-from marketdata_provider.store.segment_checksums import market_bar_checksum
+from marketdata_provider.store.segment_checksums import same_canonical_candle
 
 _NATIVE_EXCHANGE_IDS = {exchange.id for exchange in list_exchanges(native_only=True)}
 
@@ -87,6 +87,9 @@ def create_live_kline_client(
 
 
 class _ExchangeProviderAdapter:
+    # MarketDataService atomically persists every provider fetch before returning.
+    persists_fetches = True
+
     def __init__(self, config: MarketDataConfig):
         self.config = config
         self.service = MarketDataService(config)
@@ -185,7 +188,69 @@ class _CandleStoreAdapter:
             "source_kind": first.source_kind,
         }
         with self.store.segments.series_writer_lock(**key):
-            existing = self.store.segments.read_all(
+            incoming = _normalize_closed_batch(bars)
+            if not hasattr(self.store.segments, "manifest_for"):
+                existing = self.store.segments.read_all(
+                    exchange=first.exchange,
+                    market=first.market,
+                    symbol=first.symbol,
+                    timeframe=first.timeframe,
+                    source_kind=first.source_kind,
+                )
+                by_time = {bar.time: bar for bar in existing}
+                rows_written = 0
+                for bar in incoming:
+                    current = by_time.get(bar.time)
+                    if current is not None and not _same_candle_payload(current, bar):
+                        raise ValueError(f"conflicting closed candle at {bar.time}")
+                    if current is None:
+                        rows_written += 1
+                        by_time[bar.time] = bar
+                self.store.segments._replace_all_locked(
+                    [by_time[item] for item in sorted(by_time)],
+                    exchange=first.exchange,
+                    market=first.market,
+                    symbol=first.symbol,
+                    timeframe=first.timeframe,
+                    source_kind=first.source_kind,
+                )
+                return rows_written
+            manifest = self.store.segments.manifest_for(**key)
+            if manifest is None or manifest.end_time is None:
+                self.store.segments._replace_all_locked(
+                    incoming,
+                    exchange=first.exchange,
+                    market=first.market,
+                    symbol=first.symbol,
+                    timeframe=first.timeframe,
+                    source_kind=first.source_kind,
+                )
+                return len(incoming)
+
+            overlap = [bar for bar in incoming if bar.time <= manifest.end_time]
+            tail = [bar for bar in incoming if bar.time > manifest.end_time]
+            requires_backfill = False
+            if overlap:
+                existing = self.store.segments._read_all_locked(
+                    start=overlap[0].time,
+                    end=overlap[-1].time + 1,
+                    **key,
+                )
+                by_time = {bar.time: bar for bar in existing}
+                for bar in overlap:
+                    current = by_time.get(bar.time)
+                    if current is None:
+                        requires_backfill = True
+                        continue
+                    if not _same_candle_payload(current, bar):
+                        raise ValueError(f"conflicting closed candle at {bar.time}")
+
+            if not requires_backfill:
+                if tail:
+                    self.store.segments.append_strictly_newer(tail, **key)
+                return len(tail)
+
+            existing = self.store.segments._read_all_locked(
                 exchange=first.exchange,
                 market=first.market,
                 symbol=first.symbol,
@@ -194,28 +259,38 @@ class _CandleStoreAdapter:
             )
             by_time = {bar.time: bar for bar in existing}
             rows_written = 0
-            for bar in bars:
+            for bar in incoming:
                 current = by_time.get(bar.time)
                 if current is not None and not _same_candle_payload(current, bar):
                     raise ValueError(f"conflicting closed candle at {bar.time}")
                 if current is None:
                     rows_written += 1
-                by_time[bar.time] = bar
+                    by_time[bar.time] = bar
             self.store.segments._replace_all_locked(
-                list(by_time.values()),
+                [by_time[item] for item in sorted(by_time)],
                 exchange=first.exchange,
                 market=first.market,
                 symbol=first.symbol,
                 timeframe=first.timeframe,
                 source_kind=first.source_kind,
             )
-        return rows_written
+            return rows_written
 
 
 def _same_candle_payload(left: MarketBar, right: MarketBar) -> bool:
     """Return true when the candle data is identical regardless of provenance."""
 
-    return market_bar_checksum(left) == market_bar_checksum(right)
+    return same_canonical_candle(left, right)
+
+
+def _normalize_closed_batch(bars: list[MarketBar]) -> list[MarketBar]:
+    by_time: dict[int, MarketBar] = {}
+    for bar in sorted(bars, key=lambda item: item.time):
+        current = by_time.get(bar.time)
+        if current is not None and not _same_candle_payload(current, bar):
+            raise ValueError(f"conflicting closed candle at {bar.time}")
+        by_time.setdefault(bar.time, bar)
+    return list(by_time.values())
 
 
 def _series_write_error(series: BarSeries) -> str | None:

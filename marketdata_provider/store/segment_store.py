@@ -25,6 +25,7 @@ from marketdata_provider.store.segment_append import (
 from marketdata_provider.store.segment_append import (
     recover_pending_appends,
     series_lock,
+    stable_store_read_lock,
 )
 from marketdata_provider.store.segment_checksums import (
     CANONICAL_CHECKSUM,
@@ -261,8 +262,29 @@ class SegmentStore:
             "timeframe": timeframe,
             "source_kind": source_kind,
         }
-        with self.series_writer_lock(**key):
+        with self.series_reader_lock(**key):
             return self._read_all_locked(start=start, end=end, **key)
+
+    @contextmanager
+    def series_reader_lock(
+        self,
+        *,
+        exchange: str,
+        market: str,
+        symbol: str,
+        timeframe: str,
+        source_kind: str = "trade_kline",
+    ) -> Iterator[None]:
+        """Share an immutable generation while excluding atomic publishers."""
+        with stable_store_read_lock(
+            self,
+            exchange=exchange,
+            market=market,
+            symbol=symbol,
+            timeframe=timeframe,
+            source_kind=source_kind,
+        ):
+            yield
 
     def _read_all_locked(
         self,
@@ -304,7 +326,7 @@ class SegmentStore:
             "timeframe": timeframe,
             "source_kind": source_kind,
         }
-        with self.series_writer_lock(**key):
+        with self.series_reader_lock(**key):
             yield from read_iter_all(self, start=start, end=end, **key)
 
     def manifest_for(

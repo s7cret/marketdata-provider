@@ -17,8 +17,10 @@ from marketdata_provider.store.segment_checksums import (
     bars_checksum,
     legacy_bars_checksum,
     presence_unaware_bars_checksum,
-    validate_csv_checksum,
     validate_persisted_bar_semantics,
+)
+from marketdata_provider.store.segment_integrity import (
+    validate_or_trust_csv_generation,
 )
 from marketdata_provider.validation import validate_bars
 
@@ -111,7 +113,7 @@ def read_all(
     if not data_path.exists():
         return []
     if fmt == "csv":
-        validate_csv_checksum(data_path, manifest)
+        validate_or_trust_csv_generation(store, data_path, manifest)
         if start is not None or end is not None:
             bars = list(
                 store._iter_csv_range(
@@ -202,7 +204,7 @@ def iter_all(
             end=end,
         )
         return
-    validate_csv_checksum(data_path, manifest)
+    validate_or_trust_csv_generation(store, data_path, manifest)
     yield from store._iter_csv_range(
         data_path,
         start=start,

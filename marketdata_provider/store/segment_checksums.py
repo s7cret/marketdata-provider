@@ -48,6 +48,35 @@ PERSISTED_MARKET_BAR_FIELDS = (
 )
 
 
+def canonical_candle_payload(bar: MarketBar) -> tuple[object, ...]:
+    """Canonical candle values, excluding transport/download provenance."""
+
+    return (
+        bar.time,
+        bar.time_close,
+        bar.open,
+        bar.high,
+        bar.low,
+        bar.close,
+        bar.volume,
+        bar.exchange,
+        bar.market,
+        bar.symbol,
+        bar.timeframe,
+        bar.source_kind,
+        bar.is_closed,
+        bar.quote_volume,
+        bar.turnover,
+        bar.trades_count,
+        bar.taker_buy_base_volume,
+        bar.taker_buy_quote_volume,
+    )
+
+
+def same_canonical_candle(left: MarketBar, right: MarketBar) -> bool:
+    return canonical_candle_payload(left) == canonical_candle_payload(right)
+
+
 def _canon_number(v: float | None) -> str | None:
     """Canonical number formatting (kept for backward-compat / external use)."""
     if v is None:

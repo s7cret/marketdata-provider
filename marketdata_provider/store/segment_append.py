@@ -5,7 +5,7 @@ import fcntl
 import io
 import json
 import os
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -21,11 +21,12 @@ from marketdata_provider.store.segment_checksums import (
     TAIL_CHAIN_CHECKSUM,
     csv_canonical_checksum,
     extend_tail_chain,
-    market_bar_checksum,
+    same_canonical_candle,
     validate_csv_checksum,
     validate_persisted_bar_semantics,
 )
 from marketdata_provider.store.segment_manifest import SegmentManifest
+from marketdata_provider.store.segment_integrity import publish_integrity_generation
 from marketdata_provider.store.segment_rows import row_to_bar
 from marketdata_provider.timeframes import canonical_timeframe
 from marketdata_provider.validation import validate_bars
@@ -115,7 +116,7 @@ def append_strictly_newer(
                 details={"time": first.time, "stored_tail": manifest.end_time},
             )
         if first.time == manifest.end_time:
-            if market_bar_checksum(first) != market_bar_checksum(last):
+            if not same_canonical_candle(first, last):
                 raise MDCacheConflict(
                     "Conflicting tail candle", details={"time": first.time}
                 )
@@ -168,6 +169,7 @@ def append_strictly_newer(
             json.dumps(asdict(updated), sort_keys=True, indent=2) + "\n",
         )
         store._replace_index_manifest(updated, downloaded_at=downloaded_at)
+        publish_integrity_generation(store, data_path, updated)
         journal_path.unlink()
         fsync_directory(journal_path.parent)
         return updated
@@ -201,6 +203,7 @@ def commit_metadata_migration(
         json.dumps(asdict(new_manifest), sort_keys=True, indent=2) + "\n",
     )
     store._replace_index_manifest(new_manifest, downloaded_at=downloaded_at)
+    publish_integrity_generation(store, data_path, new_manifest)
     journal_path.unlink()
     fsync_directory(journal_path.parent)
 
@@ -236,7 +239,7 @@ def validated_append_bars(
                 "Segment append must be strictly ordered by time"
             )
         if normalized and bar.time == normalized[-1].time:
-            if market_bar_checksum(bar) != market_bar_checksum(normalized[-1]):
+            if not same_canonical_candle(bar, normalized[-1]):
                 raise MDCacheConflict(
                     "Conflicting append candle", details={"time": bar.time}
                 )
@@ -295,6 +298,66 @@ def series_lock(path: Path) -> Iterator[None]:
             yield
         finally:
             fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+@contextmanager
+def stable_series_read_lock(
+    path: Path,
+    *,
+    pending_journal: Callable[[], bool],
+    recover: Callable[[], None],
+) -> Iterator[None]:
+    """Share a stable generation, recovering pending writes exclusively."""
+
+    while True:
+        with path.open("a+b") as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_SH)
+            if not pending_journal():
+                try:
+                    yield
+                finally:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                return
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        recover()
+
+
+@contextmanager
+def stable_store_read_lock(
+    store: Any,
+    *,
+    exchange: str,
+    market: str,
+    symbol: str,
+    timeframe: str,
+    source_kind: str,
+) -> Iterator[None]:
+    identity = {
+        "exchange": exchange,
+        "market": market,
+        "symbol": symbol,
+        "timeframe": timeframe,
+        "source_kind": source_kind,
+    }
+    directory = store._dir(**identity)
+    active_writers: set[str] = getattr(store._series_locks, "active", set())
+    directory.mkdir(parents=True, exist_ok=True)
+    lock_path = directory / ".writer.lock"
+    if str(lock_path.resolve()) in active_writers:
+        yield
+        return
+
+    def recover() -> None:
+        with store.series_writer_lock(**identity):
+            pass
+
+    with stable_series_read_lock(
+        lock_path,
+        pending_journal=lambda: (directory / ".append-journal.json").exists()
+        or (directory / ".replace-journal.json").exists(),
+        recover=recover,
+    ):
+        yield
 
 
 def recover_pending_appends(store: Any) -> None:

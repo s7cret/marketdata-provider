@@ -326,7 +326,7 @@ def _symbol_tuple(
     return symbol_text, base_text, quote_text
 
 
-from marketdata_provider.symbols.public_markets import (
+from marketdata_provider.symbols.public_markets import (  # noqa: E402
     _PUBLIC_SPOT_SYMBOL_ENDPOINTS,
     _QUERY_FIRST_PUBLIC_SPOT_EXCHANGES,
     _public_symbol_endpoint,

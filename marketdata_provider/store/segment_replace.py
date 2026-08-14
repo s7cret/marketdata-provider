@@ -10,6 +10,7 @@ from typing import Any, cast
 
 from marketdata_provider.errors import MDInvalidExchangeResponse
 from marketdata_provider.store.segment_append import fsync_directory, series_lock
+from marketdata_provider.store.segment_integrity import publish_integrity_generation
 from marketdata_provider.store.segment_manifest import SegmentManifest
 
 JOURNAL_NAME = ".replace-journal.json"
@@ -75,10 +76,14 @@ def begin_replacement(
 def finish_replacement(store: Any, journal_path: Path) -> None:
     """Remove the rollback generation after data, manifest and index commit."""
 
-    _, _, _, old_name, new_name, backup_name = _validated_journal(store, journal_path)
+    _, _, new_manifest, old_name, new_name, backup_name = _validated_journal(
+        store, journal_path
+    )
     if old_name is not None and old_name != new_name:
         (journal_path.parent / old_name).unlink(missing_ok=True)
     new_path = journal_path.parent / new_name
+    if new_path.suffix == ".csv":
+        publish_integrity_generation(store, new_path, new_manifest)
     other_suffix = ".csv" if new_path.suffix == ".parquet" else ".parquet"
     new_path.with_suffix(other_suffix).unlink(missing_ok=True)
     if backup_name is not None:

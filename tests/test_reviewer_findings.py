@@ -120,7 +120,13 @@ def test_checksum_covers_every_persisted_market_bar_field(field_name: str) -> No
     assert market_bar_checksum(changed) != market_bar_checksum(original)
 
 
-@pytest.mark.parametrize("field_name", sorted(set(PERSISTED_FIELD_CHANGES) - {"time"}))
+@pytest.mark.parametrize(
+    "field_name",
+    sorted(
+        set(PERSISTED_FIELD_CHANGES)
+        - {"time", "source_transport", "downloaded_at"}
+    ),
+)
 def test_duplicate_with_any_changed_persisted_field_is_rejected(
     tmp_path: Path, field_name: str
 ) -> None:
@@ -133,7 +139,13 @@ def test_duplicate_with_any_changed_persisted_field_is_rejected(
         store.append_strictly_newer([changed], **KEY)
 
 
-@pytest.mark.parametrize("field_name", sorted(set(PERSISTED_FIELD_CHANGES) - {"time"}))
+@pytest.mark.parametrize(
+    "field_name",
+    sorted(
+        set(PERSISTED_FIELD_CHANGES)
+        - {"time", "source_transport", "downloaded_at"}
+    ),
+)
 def test_bulk_and_repair_comparators_cover_every_persisted_field(
     field_name: str,
 ) -> None:
@@ -142,6 +154,22 @@ def test_bulk_and_repair_comparators_cover_every_persisted_field(
 
     assert not _same_candle_payload(original, changed)
     assert not _same_candle_values(original, changed)
+
+
+@pytest.mark.parametrize("field_name", ["source_transport", "downloaded_at"])
+def test_provenance_changes_do_not_conflict_with_canonical_candle(
+    tmp_path: Path, field_name: str
+) -> None:
+    store = SegmentStore(tmp_path)
+    original = bar(0)
+    store.replace_all([original], **KEY)
+    changed = replace(original, **{field_name: PERSISTED_FIELD_CHANGES[field_name]})
+
+    store.append_strictly_newer([changed], **KEY)
+
+    assert _same_candle_payload(original, changed)
+    assert _same_candle_values(original, changed)
+    assert store.manifest_for(**KEY).rows_count == 1  # type: ignore[union-attr]
 
 
 def test_reads_reject_orphan_data_without_manifest(tmp_path: Path) -> None:
@@ -780,7 +808,7 @@ def test_bulk_closed_write_holds_one_lock_across_read_merge_write(
     bulk_done = threading.Event()
     append_done = threading.Event()
     errors: list[BaseException] = []
-    original_read_all = candle_store.segments.read_all
+    original_read_all = candle_store.segments._read_all_locked
 
     def paused_bulk_read(**key: Any) -> list[MarketBar]:
         rows = original_read_all(**key)
@@ -789,11 +817,11 @@ def test_bulk_closed_write_holds_one_lock_across_read_merge_write(
             assert release_bulk.wait(2)
         return rows
 
-    monkeypatch.setattr(candle_store.segments, "read_all", paused_bulk_read)
+    monkeypatch.setattr(candle_store.segments, "_read_all_locked", paused_bulk_read)
     bulk = threading.Thread(
         name="bulk-writer",
         target=_run_thread,
-        args=(lambda: adapter._bulk_write_closed([bar(60_000)]), errors, bulk_done),
+        args=(lambda: adapter._bulk_write_closed([bar(0), bar(60_000)]), errors, bulk_done),
     )
     append = threading.Thread(
         name="tail-appender",

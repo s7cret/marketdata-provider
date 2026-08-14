@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import replace
 from datetime import datetime, timezone
+import threading
 from typing import Protocol
 
 from marketdata_provider._adapters import series_from_market_bars
@@ -139,6 +140,8 @@ class MarketDataService:
     def __init__(self, config: MarketDataConfig):
         self.config = config
         self.store = CandleStore(config.storage.cache_dir)
+        self._flight_guard = threading.Lock()
+        self._series_flights: dict[tuple[str, str, str, str], threading.Lock] = {}
 
     def fetch_bars(self, query: BarQuery, progress_callback=None) -> BarSeries:
         base_query = self._base_query(query)
@@ -283,6 +286,25 @@ class MarketDataService:
         )
 
     def _ensure_stored(self, query: BarQuery, progress_callback=None) -> bool:
+        key = (
+            query.instrument.exchange,
+            query.instrument.market,
+            query.instrument.symbol,
+            query.timeframe.canonical,
+        )
+        guard = getattr(self, "_flight_guard", None)
+        if guard is None:
+            guard = threading.Lock()
+            self._flight_guard = guard
+            self._series_flights = {}
+        with guard:
+            flight = self._series_flights.setdefault(key, threading.Lock())
+        with flight:
+            return self._ensure_stored_locked(
+                query, progress_callback=progress_callback
+            )
+
+    def _ensure_stored_locked(self, query: BarQuery, progress_callback=None) -> bool:
         if self._stored_coverage_complete(query):
             return False
         manifest = self.store.segments.manifest_for(
