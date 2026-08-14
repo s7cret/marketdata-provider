@@ -27,6 +27,7 @@ from marketdata_provider.store.segment_integrity import (
     validate_or_trust_csv_generation,
 )
 
+
 class SegmentKey(TypedDict):
     exchange: str
     market: str
@@ -83,7 +84,7 @@ def test_bounded_read_trusts_writer_published_integrity_generation(
     store = SegmentStore(tmp_path)
     store.replace_all([bar(0), bar(60_000)], **KEY)
 
-    import marketdata_provider.store.segment_integrity as segment_integrity
+    from marketdata_provider.store import segment_integrity
 
     calls = 0
     original = segment_integrity.validate_csv_checksum
@@ -95,7 +96,9 @@ def test_bounded_read_trusts_writer_published_integrity_generation(
 
     monkeypatch.setattr(segment_integrity, "validate_csv_checksum", checksum_spy)
 
-    assert [item.time for item in store.read_all(start=60_000, end=120_000, **KEY)] == [60_000]
+    assert [item.time for item in store.read_all(start=60_000, end=120_000, **KEY)] == [
+        60_000
+    ]
     assert calls == 0
 
 
@@ -175,7 +178,9 @@ def test_candle_store_duplicate_provenance_is_noop_without_full_replace(
         ),
     )
 
-    result = adapter.write(series_from_market_bars(query(), incoming, source="provider"))
+    result = adapter.write(
+        series_from_market_bars(query(), incoming, source="provider")
+    )
 
     assert result.success is True
     assert result.rows_written == 0
@@ -249,7 +254,9 @@ def test_service_single_flight_serializes_same_series_fetch(
     ]
 
 
-def test_bulk_write_backfills_missing_overlap_and_rejects_conflicts(tmp_path: Path) -> None:
+def test_bulk_write_backfills_missing_overlap_and_rejects_conflicts(
+    tmp_path: Path,
+) -> None:
     raw_store = CandleStore(tmp_path)
     raw_store.segments.replace_all([bar(0), bar(120_000)], **KEY)
     adapter = _CandleStoreAdapter(raw_store)
@@ -302,7 +309,9 @@ def test_bulk_write_legacy_store_rejects_existing_conflict(tmp_path: Path) -> No
         adapter._bulk_write_closed([bar(0, close=9.0)])
 
 
-def test_bulk_write_revalidates_conflict_before_backfill_publish(tmp_path: Path) -> None:
+def test_bulk_write_revalidates_conflict_before_backfill_publish(
+    tmp_path: Path,
+) -> None:
     class RacingSegments:
         reads = 0
 
@@ -347,7 +356,7 @@ def test_integrity_generation_invalid_and_refresh_paths(
     generation.write_text("{broken", encoding="utf-8")
     assert integrity_generation_is_current(data_path, asdict(manifest)) is False
 
-    import marketdata_provider.store.segment_integrity as segment_integrity
+    from marketdata_provider.store import segment_integrity
 
     validated: list[Path] = []
     monkeypatch.setattr(

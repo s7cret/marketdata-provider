@@ -11,7 +11,9 @@ INTEGRITY_GENERATION_NAME = ".integrity-generation.json"
 INTEGRITY_GENERATION_VERSION = "segment-integrity-v1"
 
 
-def _generation_payload(data_path: Path, manifest: SegmentManifest) -> dict[str, object]:
+def _generation_payload(
+    data_path: Path, manifest: SegmentManifest
+) -> dict[str, object]:
     stat = data_path.stat()
     return {
         "version": INTEGRITY_GENERATION_VERSION,

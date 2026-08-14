@@ -25,8 +25,8 @@ from marketdata_provider.store.segment_checksums import (
     validate_csv_checksum,
     validate_persisted_bar_semantics,
 )
-from marketdata_provider.store.segment_manifest import SegmentManifest
 from marketdata_provider.store.segment_integrity import publish_integrity_generation
+from marketdata_provider.store.segment_manifest import SegmentManifest
 from marketdata_provider.store.segment_rows import row_to_bar
 from marketdata_provider.timeframes import canonical_timeframe
 from marketdata_provider.validation import validate_bars

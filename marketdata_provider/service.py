@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterable
 from dataclasses import replace
 from datetime import datetime, timezone
-import threading
 from typing import Protocol
 
 from marketdata_provider._adapters import series_from_market_bars

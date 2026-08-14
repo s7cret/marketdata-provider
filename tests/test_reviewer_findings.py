@@ -123,8 +123,7 @@ def test_checksum_covers_every_persisted_market_bar_field(field_name: str) -> No
 @pytest.mark.parametrize(
     "field_name",
     sorted(
-        set(PERSISTED_FIELD_CHANGES)
-        - {"time", "source_transport", "downloaded_at"}
+        set(PERSISTED_FIELD_CHANGES) - {"time", "source_transport", "downloaded_at"}
     ),
 )
 def test_duplicate_with_any_changed_persisted_field_is_rejected(
@@ -142,8 +141,7 @@ def test_duplicate_with_any_changed_persisted_field_is_rejected(
 @pytest.mark.parametrize(
     "field_name",
     sorted(
-        set(PERSISTED_FIELD_CHANGES)
-        - {"time", "source_transport", "downloaded_at"}
+        set(PERSISTED_FIELD_CHANGES) - {"time", "source_transport", "downloaded_at"}
     ),
 )
 def test_bulk_and_repair_comparators_cover_every_persisted_field(
@@ -821,7 +819,11 @@ def test_bulk_closed_write_holds_one_lock_across_read_merge_write(
     bulk = threading.Thread(
         name="bulk-writer",
         target=_run_thread,
-        args=(lambda: adapter._bulk_write_closed([bar(0), bar(60_000)]), errors, bulk_done),
+        args=(
+            lambda: adapter._bulk_write_closed([bar(0), bar(60_000)]),
+            errors,
+            bulk_done,
+        ),
     )
     append = threading.Thread(
         name="tail-appender",
