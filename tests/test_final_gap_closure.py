@@ -380,6 +380,7 @@ def test_bybit_rest_invalid_payload_and_offline_adapter() -> None:
             market="linear",
             timeframe="1m",
             include_open_candle=True,
+            server_time_ms=10**12,
         )[0].time
         == 0
     )
@@ -397,7 +398,8 @@ def test_bybit_rest_invalid_payload_and_offline_adapter() -> None:
                     [60_000, "1", "2", "0.5", "1.6", "1", "2"],
                 ]
             }
-        }
+        },
+        server_time_ms=10**12,
     )
     assert [
         bar.time

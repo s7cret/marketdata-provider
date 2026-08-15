@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping, Sequence
 from decimal import Decimal
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 from openpine_contracts import Finality, RevisionState, decimal_string
 from openpine_contracts.hashing import content_hash
@@ -152,3 +153,44 @@ def build_data_snapshot(
         schema_id="openpine.marketdata.v2",
     )
     return snapshot
+
+
+def canonical_bars_from_binance_klines(
+    rows: Iterable[Sequence[Any]],
+    *,
+    instrument_id: str,
+    timeframe: str,
+    provider: str,
+    snapshot_id: str,
+    server_time_ms: int | None,
+    include_open: bool = False,
+) -> list[dict[str, Any]]:
+    if server_time_ms is None:
+        raise MDValidationError("server_time_ms required")
+    bars: list[dict[str, Any]] = []
+    for row in rows:
+        items = list(row)
+        if len(items) < 6:
+            raise MDValidationError("kline row too short")
+        open_time = int(items[0])
+        close_time = int(items[6]) if len(items) > 6 and items[6] is not None else None
+        bar = make_canonical_bar(
+            instrument_id=instrument_id,
+            timeframe=timeframe,
+            open_time_utc_ms=open_time,
+            close_time_utc_ms=close_time,
+            open=items[1],
+            high=items[2],
+            low=items[3],
+            close=items[4],
+            volume=items[5],
+            snapshot_id=snapshot_id,
+            provider=provider,
+            finality=bar_finality(
+                close_time_ms=_close_time(timeframe, open_time, close_time),
+                server_time_ms=server_time_ms,
+            ),
+        )
+        if include_open or bar["finality"] is Finality.FINAL:
+            bars.append(bar)
+    return bars

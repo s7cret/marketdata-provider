@@ -3,11 +3,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, cast
 
+from marketdata_provider.canonical.bar import bar_finality
 from marketdata_provider.config import BinanceConfig
 from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.errors import MDInvalidExchangeResponse
 from marketdata_provider.timeframes import close_time_ms, to_binance_interval
 from marketdata_provider.validation import exclude_open_candle, validate_bars
+from openpine_contracts import Finality
 
 BINANCE_ENDPOINTS = {
     "spot": "/api/v3/klines",
@@ -37,6 +39,7 @@ def normalize_binance_klines(
         )
         if close_time <= open_time:
             close_time = close_time_ms(open_time, timeframe)
+        closed = bar_finality(close_time_ms=close_time, server_time_ms=server_time_ms)
         bars.append(
             MarketBar(
                 time=open_time,
@@ -51,7 +54,7 @@ def normalize_binance_klines(
                 symbol=symbol.upper(),
                 timeframe=timeframe,
                 source="fixture",
-                is_closed=True,
+                is_closed=closed is Finality.FINAL,
                 quote_volume=(
                     float(r[7]) if len(r) > 7 and r[7] not in (None, "") else None
                 ),

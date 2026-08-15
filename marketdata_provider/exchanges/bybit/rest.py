@@ -3,11 +3,13 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, cast
 
+from marketdata_provider.canonical.bar import bar_finality
 from marketdata_provider.config import BybitConfig
 from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.errors import MDInvalidExchangeResponse
 from marketdata_provider.timeframes import close_time_ms, to_bybit_interval
 from marketdata_provider.validation import exclude_open_candle, validate_bars
+from openpine_contracts import Finality
 
 BYBIT_ENDPOINT = "/v5/market/kline"
 
@@ -47,7 +49,10 @@ def _normalize_row(
             symbol=symbol.upper(),
             timeframe=timeframe,
             source="fixture",
-            is_closed=server_time_ms is None or close_time <= server_time_ms,
+            is_closed=bar_finality(
+                close_time_ms=close_time, server_time_ms=server_time_ms
+            )
+            is Finality.FINAL,
             quote_volume=(
                 float(row[6]) if len(row) > 6 and row[6] not in (None, "") else None
             ),

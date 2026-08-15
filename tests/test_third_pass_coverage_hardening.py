@@ -162,7 +162,12 @@ def test_binance_sync_pagination_and_async_intrabar(
     assert len(bars) == 1 and bars[0].time == 0
     assert calls[-1]["params"]["endTime"] == 59_999
 
-    stalled = FakeClient([FakeResponse(200, [_binance_row(0)])])
+    stalled = FakeClient(
+        [
+            FakeResponse(200, {"serverTime": 10**12}),
+            FakeResponse(200, [_binance_row(0)]),
+        ]
+    )
     monkeypatch.setattr(bp.httpx, "Client", lambda **_: stalled)
     monkeypatch.setattr(bp, "next_open_time_ms", lambda *_: 0)
     with pytest.raises(MDPaginationStalled):
@@ -250,7 +255,12 @@ def test_bybit_sync_pagination_and_response_validation(
         "retCode": 0,
         "result": {"list": [[0, "1", "3", "0.5", "2", "10"]]},
     }
-    stalled = FakeClient([FakeResponse(200, stalled_payload)])
+    stalled = FakeClient(
+        [
+            FakeResponse(200, {"retCode": 0, "result": {"timeNano": "1000000000000"}}),
+            FakeResponse(200, stalled_payload),
+        ]
+    )
     monkeypatch.setattr(yp.httpx, "Client", lambda **_: stalled)
     monkeypatch.setattr(yp, "next_open_time_ms", lambda *_: 0)
     with pytest.raises(MDPaginationStalled):
@@ -344,7 +354,7 @@ def test_offline_and_rest_adapters_edges(tmp_path: Path) -> None:
             include_open_candle=True,
         )
     assert (
-        OfflineBinanceRestAdapter([_binance_row(0)])
+        OfflineBinanceRestAdapter([_binance_row(0)], server_time_ms=10**12)
         .get_klines(symbol="btc", market="spot", interval="1m", start=0, end=60_000)[0]
         .symbol
         == "BTC"
@@ -358,7 +368,7 @@ def test_offline_and_rest_adapters_edges(tmp_path: Path) -> None:
             include_open_candle=True,
         )
     assert (
-        OfflineBybitRestAdapter(_bybit_payload(0))
+        OfflineBybitRestAdapter(_bybit_payload(0), server_time_ms=10**12)
         .get_klines(
             symbol="btc", market="linear", interval="1m", start=0, end=60_000, limit=1
         )[0]
@@ -998,7 +1008,11 @@ def test_provider_additional_branches_and_async_wrappers(
     ) == {"ok": 2}
 
     monkeypatch.setattr(
-        bp.httpx, "Client", lambda **_: FakeClient([FakeResponse(200, [])])
+        bp.httpx,
+        "Client",
+        lambda **_: FakeClient(
+            [FakeResponse(200, {"serverTime": 10**12}), FakeResponse(200, [])]
+        ),
     )
     assert (
         bp.binance_get_bars_sync(
@@ -1014,7 +1028,11 @@ def test_provider_additional_branches_and_async_wrappers(
         == []
     )
     monkeypatch.setattr(
-        bp.httpx, "Client", lambda **_: FakeClient([FakeResponse(200, "bad")])
+        bp.httpx,
+        "Client",
+        lambda **_: FakeClient(
+            [FakeResponse(200, {"serverTime": 10**12}), FakeResponse(200, "bad")]
+        ),
     )
     with pytest.raises(MDInvalidExchangeResponse, match="payload"):
         bp.binance_get_bars_sync(
@@ -1072,7 +1090,10 @@ def test_provider_additional_branches_and_async_wrappers(
         yp.httpx,
         "Client",
         lambda **_: FakeClient(
-            [FakeResponse(200, {"retCode": 0, "result": {"list": []}})]
+            [
+                FakeResponse(200, {"result": {"timeNano": "1000000000000"}}),
+                FakeResponse(200, {"retCode": 0, "result": {"list": []}}),
+            ]
         ),
     )
     assert (

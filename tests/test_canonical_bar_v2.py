@@ -5,6 +5,7 @@ import pytest
 from marketdata_provider.canonical.bar import (
     bar_finality,
     build_data_snapshot,
+    canonical_bars_from_binance_klines,
     make_canonical_bar,
 )
 from marketdata_provider.compat.v4 import finality_from_closed
@@ -215,3 +216,39 @@ def test_close_time_from_timeframe_and_revoked_excluded() -> None:
         bars=[orphan],
     )
     assert keep["bar_count"] == 1
+
+
+def test_canonical_klines_keep_decimal_text_and_open_finality() -> None:
+    rows = [
+        [1000, "1.2300", "2", "0.5", "1.5", "10", 60999],
+        [61000, "1.5", "2", "1", "1.2", "5", 120999],
+    ]
+    bars = canonical_bars_from_binance_klines(
+        rows,
+        instrument_id="binance:spot:BTCUSDT",
+        timeframe="1m",
+        provider="binance",
+        snapshot_id="snap",
+        server_time_ms=70000,
+    )
+    assert len(bars) == 1
+    assert bars[0]["open"] == "1.23"
+    assert bars[0]["finality"] is Finality.FINAL
+    with pytest.raises(MDValidationError, match="server_time_ms required"):
+        canonical_bars_from_binance_klines(
+            rows,
+            instrument_id="binance:spot:BTCUSDT",
+            timeframe="1m",
+            provider="binance",
+            snapshot_id="snap",
+            server_time_ms=None,
+        )
+    with pytest.raises(MDValidationError, match="too short"):
+        canonical_bars_from_binance_klines(
+            [[1000, "1"]],
+            instrument_id="binance:spot:BTCUSDT",
+            timeframe="1m",
+            provider="binance",
+            snapshot_id="snap",
+            server_time_ms=70_000,
+        )

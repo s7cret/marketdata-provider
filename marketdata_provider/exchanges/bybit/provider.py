@@ -121,11 +121,7 @@ def bybit_get_bars_sync(
     with httpx.Client(
         timeout=timeout, headers={"User-Agent": cfg.user_agent}
     ) as client:
-        server_time = (
-            None
-            if include_open_candle
-            else _server_time_ms(client, cfg.base_url, max_retries=max_retries)
-        )
+        server_time = _server_time_ms(client, cfg.base_url, max_retries=max_retries)
         while True:
             remaining = None if max_bars is None else max_bars - len(out)
             if remaining is not None and remaining <= 0:
