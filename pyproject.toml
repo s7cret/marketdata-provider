@@ -56,6 +56,8 @@ ignore = ["BLE001"]
 # Compatibility modules intentionally re-export the stable public surface.
 "marketdata_provider/core/timeframes.py" = ["F403"]
 "marketdata_provider/core/validation.py" = ["F403"]
+# Late import breaks the public_markets <-> symbols cycle.
+"marketdata_provider/symbols/__init__.py" = ["E402"]
 # These tests intentionally model process death below Exception.
 "tests/test_incremental_append.py" = ["TRY002"]
 # Shared mutable fakes model cross-instance HTTP/discovery state.

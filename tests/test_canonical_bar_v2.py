@@ -10,7 +10,7 @@ from marketdata_provider.contracts.v2 import (
 )
 from marketdata_provider.errors import MDValidationError
 from marketdata_provider.exchanges.binance.rest import normalize_binance_klines
-from openpine_contracts import Finality, RevisionState
+from openpine_contracts import Finality
 
 
 def _bar(**overrides: object):
