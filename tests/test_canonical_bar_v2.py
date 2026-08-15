@@ -33,6 +33,13 @@ def _bar(**overrides: object) -> dict[str, object]:
     return make_canonical_bar(**payload)
 
 
+def test_market_bar_requires_explicit_is_closed() -> None:
+    from marketdata_provider.core.bar import MarketBar
+
+    with pytest.raises(MDValidationError, match="is_closed required"):
+        MarketBar(time=0, open=1.0, high=1.0, low=1.0, close=1.0)
+
+
 def test_exact_close_boundary_is_inclusive() -> None:
     assert bar_finality(close_time_ms=60999, server_time_ms=60999) is Finality.FINAL
     assert bar_finality(close_time_ms=60999, server_time_ms=60998) is Finality.OPEN

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from marketdata_provider.errors import MDValidationError
+
 RUNTIME_CONTRACT_VERSION = "1.4"
 
 
@@ -32,7 +34,7 @@ class MarketBar(Bar):
     source_transport: str = "rest"
     source_kind: str = "trade_kline"
     source: str = ""
-    is_closed: bool = True
+    is_closed: bool | None = None
     quote_volume: float | None = None
     turnover: float | None = None
     trades_count: int | None = None
@@ -40,6 +42,10 @@ class MarketBar(Bar):
     taker_buy_quote_volume: float | None = None
     downloaded_at: int | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.is_closed is None:
+            raise MDValidationError("is_closed required")
 
     def to_bar(self) -> Bar:
         return Bar(

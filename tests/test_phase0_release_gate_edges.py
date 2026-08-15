@@ -38,6 +38,7 @@ def _bar(time: int = 0) -> MarketBar:
         market="spot",
         symbol="BTCUSDT",
         timeframe="1m",
+        is_closed=True,
     )
 
 

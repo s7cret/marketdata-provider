@@ -391,6 +391,7 @@ def _mb(time: int, close: float = 1.0) -> MarketBar:
         symbol="BTCUSDT",
         timeframe="1m",
         downloaded_at=1,
+        is_closed=True,
     )
 
 
@@ -804,6 +805,7 @@ def test_service_aggregation_and_archive_helpers(tmp_path: Path) -> None:
             market="usdm",
             symbol="BTCUSDT",
             timeframe="1m",
+            is_closed=True,
         ),
         MarketBar(
             time=60_000,
@@ -817,6 +819,7 @@ def test_service_aggregation_and_archive_helpers(tmp_path: Path) -> None:
             market="usdm",
             symbol="BTCUSDT",
             timeframe="1m",
+            is_closed=True,
         ),
         MarketBar(
             time=120_000,
@@ -830,6 +833,7 @@ def test_service_aggregation_and_archive_helpers(tmp_path: Path) -> None:
             market="usdm",
             symbol="BTCUSDT",
             timeframe="1m",
+            is_closed=True,
         ),
     ]
     agg = _aggregate_market_bars(bars, query=q)
