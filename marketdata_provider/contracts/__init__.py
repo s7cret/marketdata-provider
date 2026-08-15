@@ -28,11 +28,25 @@ from marketdata_provider.contracts.protocols import (
 from marketdata_provider.contracts.query import BarQuery
 from marketdata_provider.contracts.series import BarSeries, CoverageReport, StoreResult
 from marketdata_provider.contracts.timeframe import Timeframe, parse_timeframe
+from marketdata_provider.contracts.v2 import (
+    CanonicalBar,
+    DataQuery,
+    DataSnapshot,
+    bar_finality,
+    build_data_snapshot,
+    canonical_bars_from_binance_klines,
+    make_canonical_bar,
+)
+from openpine_contracts import Finality, RevisionState
 
 __all__ = [
     "AggTrade",
     "Bar",
     "BarQuery",
+    "CanonicalBar",
+    "DataQuery",
+    "DataSnapshot",
+    "Finality",
     "BarSeries",
     "CandleStore",
     "CoverageReport",
@@ -54,5 +68,10 @@ __all__ = [
     "MarketDataProvider",
     "StoreResult",
     "Timeframe",
+    "RevisionState",
+    "bar_finality",
+    "build_data_snapshot",
+    "canonical_bars_from_binance_klines",
+    "make_canonical_bar",
     "parse_timeframe",
 ]

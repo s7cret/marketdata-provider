@@ -30,5 +30,17 @@ def exclude_open_candle(
     bars: Sequence[Bar], *, server_time_ms: int | None
 ) -> list[Bar]:
     if server_time_ms is None:
-        return list(bars)
-    return [b for b in bars if b.time_close is None or b.time_close < server_time_ms]
+        raise MDValidationError(
+            "server_time_ms required for closed-bar admission",
+            details={"code": "FINALITY_EVIDENCE_MISSING"},
+        )
+    kept: list[Bar] = []
+    for bar in bars:
+        if bar.time_close is None:
+            raise MDValidationError(
+                "missing close_time cannot be treated as FINAL",
+                details={"time": bar.time},
+            )
+        if server_time_ms >= bar.time_close:
+            kept.append(bar)
+    return kept

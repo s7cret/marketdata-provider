@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "marketdata-provider"
-version = "4.0.2"
+version = "5.0.0rc1"
 description = "Market data provider for normalized exchange OHLCV and cache workflows"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
   "httpx>=0.25",
-  "tomli>=2; python_version < '3.11'",
+  "openpine-contracts @ git+https://github.com/s7cret/openpine-contracts.git@71d0c15da39071b4649ce81a9bbaa7cb5154db6d",
   "typing-extensions>=4.0",
 ]
 license = {text = "MIT"}
@@ -41,7 +41,7 @@ markers = [
 ]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 packages = ["marketdata_provider"]
 disallow_untyped_defs = false
 warn_unused_ignores = true

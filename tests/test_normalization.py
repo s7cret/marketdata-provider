@@ -20,7 +20,11 @@ def test_binance_repairs_zero_duration_historical_kline():
     rows = [[1504713600000, "1", "1", "1", "1", "0", 1504713600000]]
 
     bars = normalize_binance_klines(
-        rows, symbol="BTCUSDT", market="spot", timeframe="15m"
+        rows,
+        symbol="BTCUSDT",
+        market="spot",
+        timeframe="15m",
+        server_time_ms=1504714500000,
     )
 
     assert bars[0].time_close == 1504714499999
@@ -52,4 +56,10 @@ def test_validation_duplicate_rejected():
         [1000, "1", "2", "0.5", "1.5", "10", 60999],
     ]
     with pytest.raises(MDValidationError):
-        normalize_binance_klines(rows, symbol="BTCUSDT", market="spot", timeframe="1m")
+        normalize_binance_klines(
+            rows,
+            symbol="BTCUSDT",
+            market="spot",
+            timeframe="1m",
+            server_time_ms=200_000,
+        )
