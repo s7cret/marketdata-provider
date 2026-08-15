@@ -344,7 +344,7 @@ def test_offline_and_rest_adapters_edges(tmp_path: Path) -> None:
             include_open_candle=True,
         )
     assert (
-        OfflineBinanceRestAdapter([_binance_row(0)])
+        OfflineBinanceRestAdapter([_binance_row(0)], server_time_ms=120_000)
         .get_klines(symbol="btc", market="spot", interval="1m", start=0, end=60_000)[0]
         .symbol
         == "BTC"
@@ -358,7 +358,7 @@ def test_offline_and_rest_adapters_edges(tmp_path: Path) -> None:
             include_open_candle=True,
         )
     assert (
-        OfflineBybitRestAdapter(_bybit_payload(0))
+        OfflineBybitRestAdapter(_bybit_payload(0), server_time_ms=120_000)
         .get_klines(
             symbol="btc", market="linear", interval="1m", start=0, end=60_000, limit=1
         )[0]

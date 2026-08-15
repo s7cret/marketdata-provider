@@ -28,11 +28,21 @@ from marketdata_provider.contracts.protocols import (
 from marketdata_provider.contracts.query import BarQuery
 from marketdata_provider.contracts.series import BarSeries, CoverageReport, StoreResult
 from marketdata_provider.contracts.timeframe import Timeframe, parse_timeframe
+from marketdata_provider.contracts.v2 import (
+    CanonicalBarV2,
+    Finality,
+    RevisionState,
+    bar_finality,
+    canonical_bar_v2_from_market_bar,
+    snapshot_hash,
+)
 
 __all__ = [
     "AggTrade",
     "Bar",
     "BarQuery",
+    "CanonicalBarV2",
+    "Finality",
     "BarSeries",
     "CandleStore",
     "CoverageReport",
@@ -54,5 +64,9 @@ __all__ = [
     "MarketDataProvider",
     "StoreResult",
     "Timeframe",
+    "RevisionState",
+    "bar_finality",
+    "canonical_bar_v2_from_market_bar",
     "parse_timeframe",
+    "snapshot_hash",
 ]

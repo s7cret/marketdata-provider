@@ -29,6 +29,9 @@ def validate_bars(bars: Sequence[Bar], *, allow_empty: bool = True) -> None:
 def exclude_open_candle(
     bars: Sequence[Bar], *, server_time_ms: int | None
 ) -> list[Bar]:
+    if not bars:
+        return []
     if server_time_ms is None:
-        return list(bars)
+        # Fail-closed: last REST row may still be forming.
+        return list(bars[:-1])
     return [b for b in bars if b.time_close is None or b.time_close < server_time_ms]

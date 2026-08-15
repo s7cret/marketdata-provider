@@ -51,7 +51,9 @@ def normalize_binance_klines(
                 symbol=symbol.upper(),
                 timeframe=timeframe,
                 source="fixture",
-                is_closed=True,
+                is_closed=(
+                    server_time_ms is not None and close_time <= server_time_ms
+                ),
                 quote_volume=(
                     float(r[7]) if len(r) > 7 and r[7] not in (None, "") else None
                 ),

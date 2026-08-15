@@ -47,7 +47,7 @@ def _normalize_row(
             symbol=symbol.upper(),
             timeframe=timeframe,
             source="fixture",
-            is_closed=server_time_ms is None or close_time <= server_time_ms,
+            is_closed=server_time_ms is not None and close_time <= server_time_ms,
             quote_volume=(
                 float(row[6]) if len(row) > 6 and row[6] not in (None, "") else None
             ),
