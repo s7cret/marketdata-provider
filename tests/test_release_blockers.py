@@ -80,13 +80,14 @@ def test_release_import_falls_back_to_tomli_without_stdlib_tomllib() -> None:
     assert result.returncode == 0, result.stderr
 
 
-def test_python_310_declares_tomli_runtime_dependency() -> None:
+def test_python_requires_311_floor() -> None:
     project_config = Path("pyproject.toml").read_text(encoding="utf-8")
     project_section = project_config.split("[project]", 1)[1].split(
         "[project.urls]", 1
     )[0]
 
-    assert "tomli>=2; python_version < '3.11'" in project_section
+    assert 'requires-python = ">=3.11"' in project_section
+    assert "tomli" not in project_section
 
 
 def test_async_client_declares_typing_extensions_runtime_dependency() -> None:
