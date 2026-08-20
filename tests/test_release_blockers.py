@@ -48,8 +48,7 @@ def test_distribution_rejects_symlinked_files_outside_root(tmp_path: Path) -> No
 
 
 def test_release_import_falls_back_to_tomli_without_stdlib_tomllib() -> None:
-    script = textwrap.dedent(
-        """
+    script = textwrap.dedent("""
         import builtins
         import importlib
         import types
@@ -68,8 +67,7 @@ def test_release_import_falls_back_to_tomli_without_stdlib_tomllib() -> None:
         builtins.__import__ = simulated_python_310_import
         release = importlib.import_module("marketdata_provider.release")
         assert release.tomllib is fallback
-        """
-    )
+        """)
 
     result = subprocess.run(
         [sys.executable, "-c", script],
