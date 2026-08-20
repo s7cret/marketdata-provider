@@ -3,13 +3,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, cast
 
+from openpine_contracts import Finality
+
 from marketdata_provider.canonical.bar import bar_finality
 from marketdata_provider.config import BybitConfig
 from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.errors import MDInvalidExchangeResponse
 from marketdata_provider.timeframes import close_time_ms, to_bybit_interval
 from marketdata_provider.validation import exclude_open_candle, validate_bars
-from openpine_contracts import Finality
 
 BYBIT_ENDPOINT = "/v5/market/kline"
 

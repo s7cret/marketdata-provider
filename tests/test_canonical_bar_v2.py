@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from openpine_contracts import Finality, RevisionState, decimal_string
 
 from marketdata_provider.canonical.bar import (
     bar_finality,
@@ -10,7 +11,6 @@ from marketdata_provider.canonical.bar import (
 )
 from marketdata_provider.compat.v4 import finality_from_closed
 from marketdata_provider.errors import MDValidationError
-from openpine_contracts import Finality, RevisionState, decimal_string
 
 
 def _bar(**overrides: object) -> dict[str, object]:
@@ -144,7 +144,7 @@ def test_contracts_pin_is_exact_git_sha() -> None:
         "openpine-contracts @ git+https://github.com/s7cret/openpine-contracts.git@"
         in text
     )
-    assert "51e32ebaaf02eecb81443e8ca7e89b2543cb25a3" in text
+    assert "af9ecbc455e9af83cdc609f6b6ff85c40fb6c8bb" in text
     assert "openpine-contracts==" not in text
 
 

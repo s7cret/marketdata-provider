@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import calendar
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from marketdata_provider.errors import MDTimeframeUnsupported
 
@@ -132,13 +132,13 @@ def parse_time_ms(value: str | int) -> int:
             text = text[:-1] + "+00:00"
         parsed = datetime.fromisoformat(text)
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
+            parsed = parsed.replace(tzinfo=UTC)
         return int(parsed.timestamp() * 1000)
     return raw if raw > 1_000_000_000_000 else raw * 1000
 
 
 def _dt(ms: int) -> datetime:
-    return datetime.fromtimestamp(ms / 1000, timezone.utc)
+    return datetime.fromtimestamp(ms / 1000, UTC)
 
 
 def _ms(d: datetime) -> int:
@@ -149,18 +149,14 @@ def close_time_ms(open_time_ms: int, tf: str) -> int:
     c = canonical_timeframe(tf)
     d = _dt(open_time_ms)
     if c == "1D":
-        return (
-            _ms(datetime(d.year, d.month, d.day, tzinfo=timezone.utc)) + 86_400_000 - 1
-        )
+        return _ms(datetime(d.year, d.month, d.day, tzinfo=UTC)) + 86_400_000 - 1
     if c == "1W":
-        start = datetime(d.year, d.month, d.day, tzinfo=timezone.utc)
+        start = datetime(d.year, d.month, d.day, tzinfo=UTC)
         monday_s = start.timestamp() - (start.weekday() * 86_400)
         return int(monday_s * 1000) + 7 * 86_400_000 - 1
     if c == "1M":
         last = calendar.monthrange(d.year, d.month)[1]
-        return (
-            _ms(datetime(d.year, d.month, last, tzinfo=timezone.utc)) + 86_400_000 - 1
-        )
+        return _ms(datetime(d.year, d.month, last, tzinfo=UTC)) + 86_400_000 - 1
     return open_time_ms + timeframe_ms(c) - 1
 
 

@@ -4,11 +4,17 @@ import argparse
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 
+tomllib: Any
 try:
-    import tomllib
+    import tomllib as _stdlib_tomllib
 except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10
-    import tomli as tomllib
+    import tomli as _fallback_tomllib
+
+    tomllib = _fallback_tomllib
+else:
+    tomllib = _stdlib_tomllib
 
 from marketdata_provider.distribution import distribution_manifest
 from marketdata_provider.quality import architecture_report, duplicate_report

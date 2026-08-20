@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -11,7 +11,7 @@ pytestmark = pytest.mark.live_network
 
 
 def _ms(year, month, day):
-    return int(datetime(year, month, day, tzinfo=timezone.utc).timestamp() * 1000)
+    return int(datetime(year, month, day, tzinfo=UTC).timestamp() * 1000)
 
 
 def test_real_binance_btcusdt_1d_derived_from_1m_matches_official(tmp_path):

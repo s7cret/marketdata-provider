@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import csv
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from io import TextIOWrapper
 from pathlib import Path
 from urllib.error import HTTPError, URLError
@@ -382,7 +382,7 @@ def _days_for_intervals(
         cursor = (start // one_day_ms) * one_day_ms
         last = (max(start, end - 1) // one_day_ms) * one_day_ms
         while cursor <= last:
-            day = datetime.fromtimestamp(cursor / 1000, timezone.utc)
+            day = datetime.fromtimestamp(cursor / 1000, UTC)
             days.add((day.year, day.month, day.day))
             cursor += one_day_ms
     return tuple(sorted(days))
@@ -393,10 +393,8 @@ def _months_for_intervals(
 ) -> tuple[tuple[int, int], ...]:
     months: set[tuple[int, int]] = set()
     for start, end in intervals:
-        cursor = datetime.fromtimestamp(start / 1000, timezone.utc).replace(day=1)
-        last = datetime.fromtimestamp(max(start, end - 1) / 1000, timezone.utc).replace(
-            day=1
-        )
+        cursor = datetime.fromtimestamp(start / 1000, UTC).replace(day=1)
+        last = datetime.fromtimestamp(max(start, end - 1) / 1000, UTC).replace(day=1)
         while cursor <= last:
             months.add((cursor.year, cursor.month))
             year = cursor.year + (1 if cursor.month == 12 else 0)

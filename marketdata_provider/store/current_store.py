@@ -71,6 +71,8 @@ class CurrentStore:
         received_at: int | None = None,
         raw_event_id: str | None = None,
     ) -> None:
+        if bar.is_closed is None:
+            raise ValueError("is_closed is required for current candle storage")
         with self._connect() as db:
             db.execute(
                 "INSERT INTO current_candles(exchange,market,symbol,source_transport,source_kind,timeframe,open_time,close_time,open,high,low,close,volume,quote_volume,turnover,trades_count,taker_buy_base_volume,taker_buy_quote_volume,is_closed,event_time,received_at,raw_event_id) "

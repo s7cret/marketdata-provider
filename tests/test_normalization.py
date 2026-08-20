@@ -102,6 +102,13 @@ def test_include_open_marks_open_not_final() -> None:
     assert bars[0].is_closed is False
 
 
+def test_exclude_open_requires_server_time() -> None:
+    from marketdata_provider.validation import exclude_open_candle
+
+    with pytest.raises(MDValidationError, match="server_time_ms"):
+        exclude_open_candle([], server_time_ms=None)
+
+
 def test_exclude_open_requires_close_time() -> None:
     from marketdata_provider.core.bar import Bar
     from marketdata_provider.validation import exclude_open_candle

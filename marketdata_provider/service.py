@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 from collections.abc import Iterable
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Protocol
 
 from marketdata_provider._adapters import series_from_market_bars
@@ -474,8 +474,8 @@ def _market_bar_from_core(
 
 def _archive_cutoff_ms(config: MarketDataConfig) -> int:
     days = max(config.history.recent_lag_days, 0)
-    now = datetime.now(timezone.utc)
-    today_start = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+    now = datetime.now(UTC)
+    today_start = datetime(now.year, now.month, now.day, tzinfo=UTC)
     return int(today_start.timestamp() * 1000) - days * 86_400_000
 
 

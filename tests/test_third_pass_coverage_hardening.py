@@ -6,11 +6,10 @@ import sqlite3
 import zipfile
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 import httpx
 import pytest
-from typing_extensions import Self
 
 from marketdata_provider.config import BinanceConfig, BybitConfig
 from marketdata_provider.core.bar import RUNTIME_CONTRACT_VERSION, Bar, MarketBar

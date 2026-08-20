@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from marketdata_provider.config import MarketDataConfig
 from marketdata_provider.contracts.footprint import (
@@ -111,9 +111,7 @@ class FootprintService:
 
 
 def _day_partition(timestamp_ms: int) -> str:
-    return datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc).strftime(
-        "day=%Y-%m-%d"
-    )
+    return datetime.fromtimestamp(timestamp_ms / 1000, tz=UTC).strftime("day=%Y-%m-%d")
 
 
 def _raw_covers(trades: list[AggTrade], query: FootprintQuery) -> bool:

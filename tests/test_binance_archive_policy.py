@@ -1,12 +1,12 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from zipfile import ZipFile
 
 from marketdata_provider.exchanges.binance.archive import fetch_binance_archive_bars
 
 
 def test_wide_monthly_archive_does_not_expand_to_daily_fallback(tmp_path, monkeypatch):
-    start = int(datetime(2020, 1, 1, tzinfo=timezone.utc).timestamp() * 1000)
-    end = int(datetime(2021, 2, 1, tzinfo=timezone.utc).timestamp() * 1000)
+    start = int(datetime(2020, 1, 1, tzinfo=UTC).timestamp() * 1000)
+    end = int(datetime(2021, 2, 1, tzinfo=UTC).timestamp() * 1000)
     monthly_root = (
         tmp_path / "archives" / "binance_klines" / "spot" / "monthly" / "BTCUSDT" / "1m"
     )

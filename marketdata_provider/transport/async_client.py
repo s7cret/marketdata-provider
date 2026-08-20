@@ -3,10 +3,9 @@ from __future__ import annotations
 import asyncio
 import random
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Self
 
 import httpx
-from typing_extensions import Self
 
 
 @dataclass(frozen=True, slots=True)

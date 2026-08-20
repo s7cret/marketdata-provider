@@ -12,7 +12,7 @@ import socket
 import tempfile
 import time
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -51,7 +51,7 @@ class _EventClient(Protocol):
 
 def _utc_iso(ms: int) -> str:
     return (
-        datetime.fromtimestamp(ms / 1000, timezone.utc)
+        datetime.fromtimestamp(ms / 1000, UTC)
         .isoformat(timespec="seconds")
         .replace("+00:00", "Z")
     )
@@ -124,7 +124,7 @@ async def probe_websocket_reconnect(
                 messages += 1
                 connected = True
                 break
-            except (MarketDataError, OSError, asyncio.TimeoutError) as exc:
+            except (TimeoutError, MarketDataError, OSError) as exc:
                 last_error = exc
                 if attempt_index + 1 < attempts_per_connection:
                     retries += 1

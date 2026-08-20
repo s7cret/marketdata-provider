@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from marketdata_provider.timeframes import (
     close_time_ms,
@@ -10,7 +10,7 @@ from marketdata_provider.timeframes import (
 
 
 def ms(y, m, d, h=0, mi=0):
-    return int(datetime(y, m, d, h, mi, tzinfo=timezone.utc).timestamp() * 1000)
+    return int(datetime(y, m, d, h, mi, tzinfo=UTC).timestamp() * 1000)
 
 
 def test_fixed_mapping_and_close():

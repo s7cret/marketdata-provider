@@ -3,13 +3,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any, cast
 
+from openpine_contracts import Finality
+
 from marketdata_provider.canonical.bar import bar_finality
 from marketdata_provider.config import BinanceConfig
 from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.errors import MDInvalidExchangeResponse
 from marketdata_provider.timeframes import close_time_ms, to_binance_interval
 from marketdata_provider.validation import exclude_open_candle, validate_bars
-from openpine_contracts import Finality
 
 BINANCE_ENDPOINTS = {
     "spot": "/api/v3/klines",

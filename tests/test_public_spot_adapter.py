@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Self
 
 import httpx
 import pytest
-from typing_extensions import Self
 
 from marketdata_provider.errors import (
     MDInvalidExchangeResponse,

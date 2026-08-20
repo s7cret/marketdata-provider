@@ -10,11 +10,10 @@ import zipfile
 from argparse import Namespace
 from contextlib import nullcontext
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 import httpx
 import pytest
-from typing_extensions import Self
 
 from marketdata_provider.config import BinanceConfig, MarketDataConfig, StorageConfig
 from marketdata_provider.contracts import BarQuery, InstrumentKey, parse_timeframe
@@ -826,7 +825,7 @@ def test_streaming_async_and_pagination_remaining_branches(
             return False
 
         async def recv(self):
-            raise asyncio.TimeoutError
+            raise TimeoutError
 
     websockets = types.ModuleType("websockets")
     websockets.connect = lambda *args, **kwargs: TimeoutWS()
@@ -1203,7 +1202,7 @@ def test_remaining_retries_offline_repair_and_timeout_paths(
             return False
 
         async def recv(self):
-            raise asyncio.TimeoutError
+            raise TimeoutError
 
     websockets = types.ModuleType("websockets")
     websockets.connect = lambda *args, **kwargs: TimeoutWS()

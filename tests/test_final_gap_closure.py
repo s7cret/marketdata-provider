@@ -9,11 +9,10 @@ import types
 import zipfile
 from contextlib import closing
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 import httpx
 import pytest
-from typing_extensions import Self
 
 from marketdata_provider.config import (
     BinanceConfig,

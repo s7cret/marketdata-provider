@@ -593,7 +593,7 @@ def test_live_events_with_fake_websockets(monkeypatch: pytest.MonkeyPatch) -> No
 
         async def recv(self) -> str:
             if not self.messages:
-                raise asyncio.TimeoutError
+                raise TimeoutError
             return self.messages.pop(0)
 
     binance_payload = json.dumps(

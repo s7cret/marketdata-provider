@@ -181,7 +181,7 @@ class PublicKlineWebSocketClient:
                             yield LiveKlineEvent(update, payload)
                             if max_messages is not None and seen >= max_messages:
                                 break
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return
         except OSError as e:
             raise MDNetworkUnavailable(

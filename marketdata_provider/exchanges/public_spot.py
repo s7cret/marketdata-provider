@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, TypeAlias
 
 import httpx
@@ -624,7 +624,5 @@ def _bar_epoch(
 
 def _iso_ms(value: int) -> str:
     return (
-        datetime.fromtimestamp(value / 1000, tz=timezone.utc)
-        .isoformat()
-        .replace("+00:00", "Z")
+        datetime.fromtimestamp(value / 1000, tz=UTC).isoformat().replace("+00:00", "Z")
     )
