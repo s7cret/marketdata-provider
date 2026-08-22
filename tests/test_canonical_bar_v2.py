@@ -28,6 +28,7 @@ def _bar(**overrides: object) -> dict[str, object]:
         "revision_state": RevisionState.ORIGINAL,
         "snapshot_id": "snap-1",
         "provider": "binance",
+        "provider_revision": "binance-rest-v1",
     }
     payload.update(overrides)
     return make_canonical_bar(**payload)
@@ -64,6 +65,7 @@ def test_missing_finality_is_rejected() -> None:
             volume="10",
             snapshot_id="snap-1",
             provider="binance",
+            provider_revision="binance-rest-v1",
         )
 
 
@@ -95,6 +97,7 @@ def test_open_bar_survives_snapshot_and_is_not_in_closed_only() -> None:
         snapshot_id="live",
         instrument_id="binance:spot:BTCUSDT",
         timeframe="1m",
+        provider_revision="binance-rest-v1",
         start_utc_ms=1000,
         end_utc_ms=121000,
         bars=[open_bar, final_bar],
@@ -106,6 +109,7 @@ def test_open_bar_survives_snapshot_and_is_not_in_closed_only() -> None:
         snapshot_id="live",
         instrument_id="binance:spot:BTCUSDT",
         timeframe="1m",
+        provider_revision="binance-rest-v1",
         start_utc_ms=1000,
         end_utc_ms=121000,
         bars=[open_bar, final_bar],
@@ -122,6 +126,7 @@ def test_corrected_bar_changes_snapshot_hash() -> None:
         snapshot_id="s1",
         instrument_id="binance:spot:BTCUSDT",
         timeframe="1m",
+        provider_revision="binance-rest-v1",
         start_utc_ms=1000,
         end_utc_ms=61000,
         bars=[original],
@@ -130,6 +135,7 @@ def test_corrected_bar_changes_snapshot_hash() -> None:
         snapshot_id="s2",
         instrument_id="binance:spot:BTCUSDT",
         timeframe="1m",
+        provider_revision="binance-rest-v1",
         start_utc_ms=1000,
         end_utc_ms=61000,
         bars=[corrected],
@@ -138,14 +144,10 @@ def test_corrected_bar_changes_snapshot_hash() -> None:
     assert corrected["revision_state"] is RevisionState.CORRECTED
 
 
-def test_contracts_pin_is_exact_git_sha() -> None:
+def test_contracts_dependency_is_exact_publishable_rc3() -> None:
     text = Path("pyproject.toml").read_text(encoding="utf-8")
-    assert (
-        "openpine-contracts @ git+https://github.com/s7cret/openpine-contracts.git@"
-        in text
-    )
-    assert "af9ecbc455e9af83cdc609f6b6ff85c40fb6c8bb" in text
-    assert "openpine-contracts==" not in text
+    assert '"openpine-contracts==5.0.0rc3"' in text
+    assert "git+" not in text
 
 
 def test_adapter_fail_closed_edges() -> None:
@@ -161,9 +163,13 @@ def test_adapter_fail_closed_edges() -> None:
             volume="0",
             snapshot_id="s",
             provider="p",
+            provider_revision="test-provider-v1",
             finality=Finality.FINAL,
         )
-    with pytest.raises(MDValidationError, match="Finality"):
+    normalized = _bar(finality="FINAL", revision_state="ORIGINAL")  # type: ignore[arg-type]
+    assert normalized["finality"] is Finality.FINAL
+    assert normalized["revision_state"] is RevisionState.ORIGINAL
+    with pytest.raises(MDValidationError, match="finality"):
         make_canonical_bar(
             instrument_id="i",
             timeframe="1m",
@@ -175,7 +181,8 @@ def test_adapter_fail_closed_edges() -> None:
             volume="0",
             snapshot_id="s",
             provider="p",
-            finality="FINAL",  # type: ignore[arg-type]
+            provider_revision="test-provider-v1",
+            finality="UNKNOWN",  # type: ignore[arg-type]
         )
     with pytest.raises(MDValidationError, match="revision"):
         _bar(revision=-1)
@@ -192,6 +199,7 @@ def test_adapter_fail_closed_edges() -> None:
             snapshot_id="s",
             instrument_id="i",
             timeframe="1m",
+            provider_revision="binance-rest-v1",
             start_utc_ms=0,
             end_utc_ms=1,
             bars=[],
@@ -200,13 +208,14 @@ def test_adapter_fail_closed_edges() -> None:
 
 
 def test_close_time_from_timeframe_and_revoked_excluded() -> None:
-    bar = _bar(close_time_utc_ms=1000)
+    bar = _bar(close_time_utc_ms=None)
     assert bar["close_time_utc_ms"] == 60999
-    revoked = _bar(revision_state=RevisionState.REVOKED)
+    revoked = _bar(revision_state=RevisionState.REVOKED, revision=1)
     snapshot = build_data_snapshot(
         snapshot_id="s",
         instrument_id="binance:spot:BTCUSDT",
         timeframe="1m",
+        provider_revision="binance-rest-v1",
         start_utc_ms=0,
         end_utc_ms=70000,
         bars=[revoked],
@@ -214,15 +223,16 @@ def test_close_time_from_timeframe_and_revoked_excluded() -> None:
     assert snapshot["bar_count"] == 0
     orphan = dict(_bar())
     orphan.pop("revision_state", None)
-    keep = build_data_snapshot(
-        snapshot_id="s",
-        instrument_id="binance:spot:BTCUSDT",
-        timeframe="1m",
-        start_utc_ms=0,
-        end_utc_ms=70000,
-        bars=[orphan],
-    )
-    assert keep["bar_count"] == 1
+    with pytest.raises(MDValidationError, match="revision_state"):
+        build_data_snapshot(
+            snapshot_id="s",
+            instrument_id="binance:spot:BTCUSDT",
+            timeframe="1m",
+            provider_revision="binance-rest-v1",
+            start_utc_ms=0,
+            end_utc_ms=70000,
+            bars=[orphan],
+        )
 
 
 def test_canonical_klines_keep_decimal_text_and_open_finality() -> None:
@@ -235,6 +245,7 @@ def test_canonical_klines_keep_decimal_text_and_open_finality() -> None:
         instrument_id="binance:spot:BTCUSDT",
         timeframe="1m",
         provider="binance",
+        provider_revision="binance-rest-v1",
         snapshot_id="snap",
         server_time_ms=70000,
     )
@@ -247,6 +258,7 @@ def test_canonical_klines_keep_decimal_text_and_open_finality() -> None:
             instrument_id="binance:spot:BTCUSDT",
             timeframe="1m",
             provider="binance",
+            provider_revision="binance-rest-v1",
             snapshot_id="snap",
             server_time_ms=None,
         )
@@ -256,6 +268,7 @@ def test_canonical_klines_keep_decimal_text_and_open_finality() -> None:
             instrument_id="binance:spot:BTCUSDT",
             timeframe="1m",
             provider="binance",
+            provider_revision="binance-rest-v1",
             snapshot_id="snap",
             server_time_ms=70_000,
         )

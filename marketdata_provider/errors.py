@@ -34,6 +34,18 @@ class MDValidationError(MarketDataError):
     code = "MD_VALIDATION_ERROR"
 
 
+class MDMissingFinality(MDValidationError):
+    """Raised when canonical market data omits explicit finality."""
+
+    code = "MD_MISSING_FINALITY"
+
+
+class MDBarConflict(MDValidationError):
+    """Raised when one bar identity has conflicting canonical content."""
+
+    code = "MD_BAR_CONFLICT"
+
+
 class MDIntrabarDataUnavailable(MarketDataError):
     code = "MD_INTRABAR_DATA_UNAVAILABLE"
 

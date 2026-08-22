@@ -1,26 +1,65 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+import time
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from decimal import Decimal
-from typing import Any
+from typing import Any, NoReturn
 
 from openpine_contracts import Finality, RevisionState, decimal_string
 from openpine_contracts.hashing import content_hash
 from openpine_contracts.money import MoneyError
 
-from marketdata_provider.errors import MDValidationError
+from marketdata_provider.errors import (
+    MDBarConflict,
+    MDMissingFinality,
+    MDTimeframeUnsupported,
+    MDValidationError,
+)
+from marketdata_provider.timeframes import (
+    canonical_timeframe,
+)
+from marketdata_provider.timeframes import (
+    close_time_ms as canonical_close_time_ms,
+)
 
-_TIMEFRAME_MS: dict[str, int] = {
-    "1m": 60_000,
-    "3m": 180_000,
-    "5m": 300_000,
-    "15m": 900_000,
-    "30m": 1_800_000,
-    "1h": 3_600_000,
-    "2h": 7_200_000,
-    "4h": 14_400_000,
-    "1d": 86_400_000,
-}
+_SCHEMA_ID = "openpine.marketdata.v2"
+_SUPPORTED_TIMEFRAMES = frozenset(
+    {
+        "1s",
+        "1m",
+        "3m",
+        "5m",
+        "15m",
+        "30m",
+        "1h",
+        "2h",
+        "4h",
+        "6h",
+        "12h",
+        "1D",
+        "1W",
+        "1M",
+    }
+)
+_REQUIRED_BAR_FIELDS = (
+    "instrument_id",
+    "timeframe",
+    "open_time_utc_ms",
+    "close_time_utc_ms",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "finality",
+    "revision_state",
+    "revision",
+    "snapshot_id",
+    "provider",
+    "provider_revision",
+    "series_id",
+    "bar_content_hash",
+)
 
 
 def bar_finality(*, close_time_ms: int, server_time_ms: int | None) -> Finality:
@@ -29,6 +68,72 @@ def bar_finality(*, close_time_ms: int, server_time_ms: int | None) -> Finality:
     if server_time_ms >= close_time_ms:
         return Finality.FINAL
     return Finality.OPEN
+
+
+def _required_text(name: str, value: object) -> str:
+    if not isinstance(value, str) or not value:
+        raise MDValidationError(f"{name} is required")
+    return value
+
+
+def _integer_field(name: str, value: object, *, minimum: int = 0) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise MDValidationError(f"{name} must be an integer")
+    if value < minimum:
+        raise MDValidationError(f"{name} must be >= {minimum}")
+    return value
+
+
+def _canonical_timeframe(value: object) -> str:
+    timeframe = _required_text("timeframe", value)
+    try:
+        normalized = canonical_timeframe(timeframe)
+    except MDTimeframeUnsupported as exc:
+        raise MDValidationError(f"unsupported timeframe: {timeframe}") from exc
+    if normalized != timeframe:
+        raise MDValidationError(
+            f"canonical timeframe required: {timeframe!r} normalizes to {normalized!r}"
+        )
+    if normalized not in _SUPPORTED_TIMEFRAMES:
+        raise MDValidationError(f"unsupported timeframe: {timeframe}")
+    return normalized
+
+
+def _normalize_finality(value: object) -> Finality:
+    if value is None:
+        raise MDMissingFinality("finality is required")
+    if isinstance(value, bool):
+        raise MDValidationError("finality bool is invalid")
+    if isinstance(value, Finality):
+        return value
+    if isinstance(value, str):
+        try:
+            return Finality(value)
+        except ValueError as exc:
+            raise MDValidationError(f"unknown finality: {value}") from exc
+    raise MDValidationError("finality must be a Finality value")
+
+
+def _normalize_revision_state(value: object) -> RevisionState:
+    if isinstance(value, bool):
+        raise MDValidationError("revision_state bool is invalid")
+    if isinstance(value, RevisionState):
+        return value
+    if isinstance(value, str):
+        try:
+            return RevisionState(value)
+        except ValueError as exc:
+            raise MDValidationError(f"unknown revision_state: {value}") from exc
+    raise MDValidationError("revision_state must be a RevisionState value")
+
+
+def _normalize_revision(value: object, state: RevisionState) -> int:
+    revision = _integer_field("revision", value)
+    if state is RevisionState.ORIGINAL and revision != 0:
+        raise MDValidationError("ORIGINAL revision must be 0")
+    if state is not RevisionState.ORIGINAL and revision == 0:
+        raise MDValidationError(f"{state.value} revision must be >= 1")
+    return revision
 
 
 def _decimal_field(name: str, value: object) -> str:
@@ -40,15 +145,60 @@ def _decimal_field(name: str, value: object) -> str:
         raise MDValidationError(f"invalid {name}") from exc
 
 
-def _close_time(
-    timeframe: str, open_time_utc_ms: int, close_time_utc_ms: int | None
+def _validated_prices(
+    *, open: object, high: object, low: object, close: object, volume: object
+) -> tuple[str, str, str, str, str]:
+    open_s = _decimal_field("open", open)
+    high_s = _decimal_field("high", high)
+    low_s = _decimal_field("low", low)
+    close_s = _decimal_field("close", close)
+    volume_s = _decimal_field("volume", volume)
+    if Decimal(volume_s) < 0:
+        raise MDValidationError("volume must be nonnegative")
+
+    open_d, high_d, low_d, close_d = (
+        Decimal(part) for part in (open_s, high_s, low_s, close_s)
+    )
+    if not (low_d <= min(open_d, close_d) <= max(open_d, close_d) <= high_d):
+        raise MDValidationError("OHLC invariants violated")
+    return open_s, high_s, low_s, close_s, volume_s
+
+
+def _canonical_close_time(
+    timeframe: str, open_time_utc_ms: int, supplied: object
 ) -> int:
-    if close_time_utc_ms is not None and close_time_utc_ms > open_time_utc_ms:
-        return close_time_utc_ms
-    duration = _TIMEFRAME_MS.get(timeframe)
-    if duration is None:
-        raise MDValidationError(f"unsupported timeframe: {timeframe}")
-    return open_time_utc_ms + duration - 1
+    expected = canonical_close_time_ms(open_time_utc_ms, timeframe)
+    if supplied is None:
+        return expected
+    close_time_utc_ms = _integer_field("close_time_utc_ms", supplied)
+    if close_time_utc_ms != expected:
+        raise MDValidationError(
+            "close_time_utc_ms does not match canonical timeframe boundary"
+        )
+    return close_time_utc_ms
+
+
+def _bar_identity_payload(bar: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "instrument_id": bar["instrument_id"],
+        "timeframe": bar["timeframe"],
+        "open_time_utc_ms": bar["open_time_utc_ms"],
+        "close_time_utc_ms": bar["close_time_utc_ms"],
+        "open": bar["open"],
+        "high": bar["high"],
+        "low": bar["low"],
+        "close": bar["close"],
+        "volume": bar["volume"],
+        "finality": bar["finality"].value,
+        "revision_state": bar["revision_state"].value,
+        "revision": bar["revision"],
+        "provider": bar["provider"],
+        "provider_revision": bar["provider_revision"],
+    }
+
+
+def _bar_content_hash(bar: Mapping[str, Any]) -> str:
+    return content_hash(_bar_identity_payload(bar), schema_id=_SCHEMA_ID)
 
 
 def make_canonical_bar(
@@ -63,53 +213,199 @@ def make_canonical_bar(
     volume: object,
     snapshot_id: str,
     provider: str,
-    finality: Finality | None = None,
-    revision_state: RevisionState = RevisionState.ORIGINAL,
+    provider_revision: str | None = None,
+    finality: Finality | str | None = None,
+    revision_state: RevisionState | str = RevisionState.ORIGINAL,
     revision: int = 0,
     close_time_utc_ms: int | None = None,
 ) -> dict[str, Any]:
-    if not instrument_id or not timeframe or not snapshot_id or not provider:
-        raise MDValidationError("instrument/timeframe/snapshot/provider required")
-    if finality is None:
-        raise MDValidationError("finality is required")
-    if not isinstance(finality, Finality):
-        raise MDValidationError("finality must be openpine_contracts.Finality")
-    if revision < 0:
-        raise MDValidationError("revision must be >= 0")
+    instrument = _required_text("instrument_id", instrument_id)
+    canonical_tf = _canonical_timeframe(timeframe)
+    snapshot = _required_text("snapshot_id", snapshot_id)
+    source_provider = _required_text("provider", provider)
+    source_provider_revision = _required_text("provider_revision", provider_revision)
+    open_ms = _integer_field("open_time_utc_ms", open_time_utc_ms)
+    normalized_finality = _normalize_finality(finality)
+    normalized_state = _normalize_revision_state(revision_state)
+    normalized_revision = _normalize_revision(revision, normalized_state)
+    open_s, high_s, low_s, close_s, volume_s = _validated_prices(
+        open=open,
+        high=high,
+        low=low,
+        close=close,
+        volume=volume,
+    )
+    close_ms = _canonical_close_time(canonical_tf, open_ms, close_time_utc_ms)
 
-    open_s = _decimal_field("open", open)
-    high_s = _decimal_field("high", high)
-    low_s = _decimal_field("low", low)
-    close_s = _decimal_field("close", close)
-    volume_s = _decimal_field("volume", volume)
-    if decimal_string(volume_s).startswith("-") and volume_s != "0":
-        raise MDValidationError("volume must be nonnegative")
-
-    ohlc = [decimal_string(part) for part in (open_s, high_s, low_s, close_s)]
-    open_d, high_d, low_d, close_d = (Decimal(part) for part in ohlc)
-    if not (low_d <= min(open_d, close_d) <= max(open_d, close_d) <= high_d):
-        raise MDValidationError("OHLC invariants violated")
-
-    close_ms = _close_time(timeframe, open_time_utc_ms, close_time_utc_ms)
     body: dict[str, Any] = {
-        "instrument_id": instrument_id,
-        "timeframe": timeframe,
-        "open_time_utc_ms": open_time_utc_ms,
+        "instrument_id": instrument,
+        "timeframe": canonical_tf,
+        "open_time_utc_ms": open_ms,
         "close_time_utc_ms": close_ms,
         "open": open_s,
         "high": high_s,
         "low": low_s,
         "close": close_s,
         "volume": volume_s,
-        "finality": finality,
-        "revision_state": revision_state,
-        "revision": revision,
-        "snapshot_id": snapshot_id,
-        "provider": provider,
-        "series_id": f"{instrument_id}:{timeframe}",
+        "finality": normalized_finality,
+        "revision_state": normalized_state,
+        "revision": normalized_revision,
+        "snapshot_id": snapshot,
+        "provider": source_provider,
+        "provider_revision": source_provider_revision,
+        "series_id": f"{instrument}:{canonical_tf}",
     }
-    body["bar_content_hash"] = content_hash(body, schema_id="openpine.marketdata.v2")
+    body["bar_content_hash"] = _bar_content_hash(body)
     return body
+
+
+def _normalize_snapshot_bar(bar: Mapping[str, Any]) -> dict[str, Any]:
+    if "finality" not in bar:
+        raise MDMissingFinality("finality is required")
+    for field in _REQUIRED_BAR_FIELDS:
+        if field not in bar:
+            raise MDValidationError(f"bar missing required field: {field}")
+
+    canonical = make_canonical_bar(
+        instrument_id=bar["instrument_id"],
+        timeframe=bar["timeframe"],
+        open_time_utc_ms=bar["open_time_utc_ms"],
+        close_time_utc_ms=bar["close_time_utc_ms"],
+        open=bar["open"],
+        high=bar["high"],
+        low=bar["low"],
+        close=bar["close"],
+        volume=bar["volume"],
+        snapshot_id=bar["snapshot_id"],
+        provider=bar["provider"],
+        provider_revision=bar["provider_revision"],
+        finality=bar["finality"],
+        revision_state=bar["revision_state"],
+        revision=bar["revision"],
+    )
+    supplied_hash = bar["bar_content_hash"]
+    if (
+        not isinstance(supplied_hash, str)
+        or supplied_hash != canonical["bar_content_hash"]
+    ):
+        raise MDValidationError("bar_content_hash verification failed")
+
+    normalized = dict(bar)
+    normalized.update(canonical)
+    return normalized
+
+
+def _raise_bar_conflict(
+    reason: str, open_time_utc_ms: int, bars: Sequence[Mapping[str, Any]]
+) -> NoReturn:
+    conflict = {
+        "open_time_utc_ms": open_time_utc_ms,
+        "reason": reason,
+        "revisions": [bar["revision"] for bar in bars],
+        "bar_content_hashes": [bar["bar_content_hash"] for bar in bars],
+    }
+    raise MDBarConflict(
+        f"bar content conflict at {open_time_utc_ms}: {reason}",
+        details={"conflicts": [conflict]},
+    )
+
+
+def _resolve_bar_group(
+    group: list[dict[str, Any]],
+) -> tuple[
+    dict[str, Any] | None,
+    list[dict[str, Any]],
+    dict[str, Any] | None,
+]:
+    open_time = int(group[0]["open_time_utc_ms"])
+    unique: list[dict[str, Any]] = []
+    counts: dict[str, int] = {}
+    for bar in group:
+        hash_value = str(bar["bar_content_hash"])
+        counts[hash_value] = counts.get(hash_value, 0) + 1
+        if counts[hash_value] == 1:
+            unique.append(bar)
+
+    duplicates = [
+        {
+            "open_time_utc_ms": open_time,
+            "revision": bar["revision"],
+            "count": counts[str(bar["bar_content_hash"])],
+            "bar_content_hash": bar["bar_content_hash"],
+        }
+        for bar in unique
+        if counts[str(bar["bar_content_hash"])] > 1
+    ]
+
+    providers = {str(bar["provider"]) for bar in unique}
+    if len(providers) != 1:
+        _raise_bar_conflict("provider changed within revision chain", open_time, unique)
+
+    seen_revisions: dict[int, dict[str, Any]] = {}
+    previous_revision: int | None = None
+    previous_state: RevisionState | None = None
+    for bar in unique:
+        revision = int(bar["revision"])
+        if revision in seen_revisions:
+            _raise_bar_conflict(
+                "same revision has different content", open_time, unique
+            )
+        if previous_revision is not None and revision <= previous_revision:
+            _raise_bar_conflict(
+                "revision chain is not strictly increasing", open_time, unique
+            )
+        if previous_state is RevisionState.REVOKED:
+            _raise_bar_conflict(
+                "revision follows terminal revocation", open_time, unique
+            )
+        seen_revisions[revision] = bar
+        previous_revision = revision
+        previous_state = bar["revision_state"]
+
+    selected = unique[-1]
+    revoked = selected["revision_state"] is RevisionState.REVOKED
+    chain = None
+    if len(unique) > 1 or selected["revision_state"] is not RevisionState.ORIGINAL:
+        chain = {
+            "open_time_utc_ms": open_time,
+            "revisions": [bar["revision"] for bar in unique],
+            "revision_states": [bar["revision_state"].value for bar in unique],
+            "selected_revision": None if revoked else selected["revision"],
+            "revoked": revoked,
+        }
+    return (None if revoked else selected), duplicates, chain
+
+
+def _coverage_metadata(
+    bars: Sequence[Mapping[str, Any]], start_utc_ms: int, end_utc_ms: int
+) -> tuple[dict[str, Any], list[dict[str, int]]]:
+    gaps: list[dict[str, int]] = []
+    cursor = start_utc_ms
+    for bar in bars:
+        open_time = int(bar["open_time_utc_ms"])
+        close_end = int(bar["close_time_utc_ms"]) + 1
+        if open_time > cursor:
+            gaps.append({"start_utc_ms": cursor, "end_utc_ms": open_time})
+        cursor = max(cursor, close_end)
+    if cursor < end_utc_ms:
+        gaps.append({"start_utc_ms": cursor, "end_utc_ms": end_utc_ms})
+
+    coverage = {
+        "requested_start_utc_ms": start_utc_ms,
+        "requested_end_utc_ms": end_utc_ms,
+        "covered_start_utc_ms": (int(bars[0]["open_time_utc_ms"]) if bars else None),
+        "covered_end_utc_ms": (
+            int(bars[-1]["close_time_utc_ms"]) + 1 if bars else None
+        ),
+        "bar_count": len(bars),
+        "gap_count": len(gaps),
+        "complete": not gaps,
+    }
+    return coverage, gaps
+
+
+def _utc_now_ms() -> int:
+    return time.time_ns() // 1_000_000
 
 
 def build_data_snapshot(
@@ -117,42 +413,108 @@ def build_data_snapshot(
     snapshot_id: str,
     instrument_id: str,
     timeframe: str,
+    provider_revision: str | None = None,
     start_utc_ms: int,
     end_utc_ms: int,
     bars: Iterable[Mapping[str, Any]],
     finality_policy: str = "CLOSED_BAR_ONLY",
+    clock: Callable[[], int] | None = None,
 ) -> dict[str, Any]:
+    snapshot_instance_id = _required_text("snapshot_id", snapshot_id)
+    instrument = _required_text("instrument_id", instrument_id)
+    canonical_tf = _canonical_timeframe(timeframe)
+    expected_provider_revision = _required_text("provider_revision", provider_revision)
+    start_ms = _integer_field("start_utc_ms", start_utc_ms)
+    end_ms = _integer_field("end_utc_ms", end_utc_ms)
+    if end_ms <= start_ms:
+        raise MDValidationError("snapshot range must satisfy start_utc_ms < end_utc_ms")
     if finality_policy not in {"CLOSED_BAR_ONLY", "ALLOW_OPEN"}:
         raise MDValidationError(f"unknown finality_policy: {finality_policy}")
+
+    normalized: list[dict[str, Any]] = []
+    previous_open: int | None = None
+    for raw_bar in bars:
+        if not isinstance(raw_bar, Mapping):
+            raise MDValidationError("each bar must be a mapping")
+        bar = _normalize_snapshot_bar(raw_bar)
+        if bar["instrument_id"] != instrument:
+            raise MDValidationError("bar instrument_id does not match snapshot")
+        if bar["timeframe"] != canonical_tf:
+            raise MDValidationError("bar timeframe does not match snapshot")
+        if bar["provider_revision"] != expected_provider_revision:
+            raise MDValidationError("bar provider_revision does not match snapshot")
+        open_time = int(bar["open_time_utc_ms"])
+        close_time = int(bar["close_time_utc_ms"])
+        if open_time < start_ms or close_time >= end_ms:
+            raise MDValidationError("bar is outside requested range")
+        if previous_open is not None and open_time < previous_open:
+            raise MDValidationError("bar open_time is not monotonic")
+        previous_open = open_time
+        normalized.append(bar)
+
     kept: list[dict[str, Any]] = []
-    for bar in bars:
-        finality = bar["finality"]
-        revision_state = bar.get("revision_state", RevisionState.ORIGINAL)
-        if revision_state is RevisionState.REVOKED:
-            continue
-        if finality_policy == "CLOSED_BAR_ONLY" and finality is not Finality.FINAL:
-            continue
-        kept.append(dict(bar))
-    kept.sort(key=lambda item: int(item["open_time_utc_ms"]))
+    duplicates: list[dict[str, Any]] = []
+    revision_chains: list[dict[str, Any]] = []
+    index = 0
+    previous_close: int | None = None
+    while index < len(normalized):
+        open_time = int(normalized[index]["open_time_utc_ms"])
+        next_index = index + 1
+        while (
+            next_index < len(normalized)
+            and int(normalized[next_index]["open_time_utc_ms"]) == open_time
+        ):
+            next_index += 1
+        selected, group_duplicates, chain = _resolve_bar_group(
+            normalized[index:next_index]
+        )
+        duplicates.extend(group_duplicates)
+        if chain is not None:
+            revision_chains.append(chain)
+        if selected is not None:
+            if previous_close is not None and open_time <= previous_close:
+                raise MDValidationError(
+                    "bar ranges overlap despite monotonic open_time"
+                )
+            previous_close = int(selected["close_time_utc_ms"])
+            if (
+                finality_policy == "ALLOW_OPEN"
+                or selected["finality"] is Finality.FINAL
+            ):
+                kept.append(selected)
+        index = next_index
+
     query = {
-        "instrument_id": instrument_id,
-        "timeframe": timeframe,
-        "start_utc_ms": start_utc_ms,
-        "end_utc_ms": end_utc_ms,
+        "instrument_id": instrument,
+        "timeframe": canonical_tf,
+        "provider_revision": expected_provider_revision,
+        "start_utc_ms": start_ms,
+        "end_utc_ms": end_ms,
         "finality_policy": finality_policy,
     }
-    snapshot: dict[str, Any] = {
-        "snapshot_id": snapshot_id,
+    coverage, gaps = _coverage_metadata(kept, start_ms, end_ms)
+    series_identity = {
+        "query": query,
+        "ordered_bar_content_hashes": [bar["bar_content_hash"] for bar in kept],
+        "schema_ids": {
+            "bar": _SCHEMA_ID,
+            "snapshot": _SCHEMA_ID,
+        },
+    }
+    created_at = _integer_field("created_at_utc_ms", (clock or _utc_now_ms)())
+    return {
+        "snapshot_id": snapshot_instance_id,
         "query": query,
         "bar_count": len(kept),
         "bars": kept,
-        "created_at_utc_ms": 0,
+        "coverage": coverage,
+        "gaps": gaps,
+        "duplicates": duplicates,
+        "conflicts": [],
+        "revision_chains": revision_chains,
+        "created_at_utc_ms": created_at,
+        "series_hash": content_hash(series_identity, schema_id=_SCHEMA_ID),
     }
-    snapshot["series_hash"] = content_hash(
-        {"bars": [bar["bar_content_hash"] for bar in kept], "query": query},
-        schema_id="openpine.marketdata.v2",
-    )
-    return snapshot
 
 
 def canonical_bars_from_binance_klines(
@@ -161,24 +523,27 @@ def canonical_bars_from_binance_klines(
     instrument_id: str,
     timeframe: str,
     provider: str,
+    provider_revision: str | None = None,
     snapshot_id: str,
     server_time_ms: int | None,
     include_open: bool = False,
 ) -> list[dict[str, Any]]:
     if server_time_ms is None:
         raise MDValidationError("server_time_ms required")
+    canonical_tf = _canonical_timeframe(timeframe)
     bars: list[dict[str, Any]] = []
     for row in rows:
         items = list(row)
         if len(items) < 6:
             raise MDValidationError("kline row too short")
-        open_time = int(items[0])
-        close_time = int(items[6]) if len(items) > 6 and items[6] is not None else None
+        open_time = _integer_field("open_time_utc_ms", items[0])
+        expected_close = canonical_close_time_ms(open_time, canonical_tf)
+        supplied_close = items[6] if len(items) > 6 else None
         bar = make_canonical_bar(
             instrument_id=instrument_id,
-            timeframe=timeframe,
+            timeframe=canonical_tf,
             open_time_utc_ms=open_time,
-            close_time_utc_ms=close_time,
+            close_time_utc_ms=supplied_close,
             open=items[1],
             high=items[2],
             low=items[3],
@@ -186,8 +551,9 @@ def canonical_bars_from_binance_klines(
             volume=items[5],
             snapshot_id=snapshot_id,
             provider=provider,
+            provider_revision=provider_revision,
             finality=bar_finality(
-                close_time_ms=_close_time(timeframe, open_time, close_time),
+                close_time_ms=expected_close,
                 server_time_ms=server_time_ms,
             ),
         )

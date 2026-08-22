@@ -1,19 +1,19 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "marketdata-provider"
-version = "4.0.2"
+version = "5.0.0rc3"
 description = "Market data provider for normalized exchange OHLCV and cache workflows"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "httpx>=0.25",
   "typing-extensions>=4.0",
-  "openpine-contracts @ git+https://github.com/s7cret/openpine-contracts.git@af9ecbc455e9af83cdc609f6b6ff85c40fb6c8bb",
+  "openpine-contracts==5.0.0rc3",
 ]
-license = {text = "MIT"}
+license = "MIT"
 
 [project.urls]
 Homepage = "https://github.com/s7cret/marketdata-provider"
