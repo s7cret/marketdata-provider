@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from decimal import Decimal
-from typing import Any, NoReturn
+from typing import Any, NoReturn, cast
 
 from openpine_contracts import Finality, RevisionState, decimal_string
 from openpine_contracts.hashing import content_hash
@@ -140,7 +140,7 @@ def _decimal_field(name: str, value: object) -> str:
     if isinstance(value, float) and not isinstance(value, bool):
         raise MDValidationError(f"{name} float is forbidden on contract boundary")
     try:
-        return decimal_string(value)  # type: ignore[arg-type]
+        return decimal_string(cast(str | int | Decimal, value))
     except (MoneyError, TypeError) as exc:
         raise MDValidationError(f"invalid {name}") from exc
 
