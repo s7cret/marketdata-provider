@@ -246,6 +246,11 @@ async def test_create_live_kline_client_yields_canonical_events(
                     10.0,
                     is_closed=False,
                     received_at=456,
+                    open_text="1.0",
+                    high_text="2.0",
+                    low_text="0.5",
+                    close_text="1.5",
+                    volume_text="10.0",
                 ),
                 raw_payload={"stream": "test"},
             )

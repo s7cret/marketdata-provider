@@ -647,18 +647,27 @@ def _aggregate_bucket(
     provider_revision = content_hash(
         {
             "provider": provider,
-            "source_revisions": sorted(
-                {
-                    bar.provider_revision
-                    for bar in bucket
-                    if bar.provider_revision is not None
-                }
-            ),
             "timeframe": query.timeframe.canonical,
             "bucket_time": bucket_time,
-            "source_times": [bar.time for bar in bucket],
+            "source_bars": [
+                {
+                    "time": bar.time,
+                    "time_close": bar.time_close,
+                    "open": bar.open_text or str(bar.open),
+                    "high": bar.high_text or str(bar.high),
+                    "low": bar.low_text or str(bar.low),
+                    "close": bar.close_text or str(bar.close),
+                    "volume": bar.volume_text or str(bar.volume),
+                    "is_closed": bar.is_closed,
+                    "provider": bar.provider,
+                    "provider_revision": bar.provider_revision,
+                    "revision_state": bar.revision_state.value,
+                    "revision": bar.revision,
+                }
+                for bar in bucket
+            ],
         },
-        schema_id="marketdata-provider.aggregate-revision.v1",
+        schema_id="marketdata-provider.aggregate-revision.v2",
     )
     high_source = max(bucket, key=lambda bar: Decimal(bar.high_text or str(bar.high)))
     low_source = min(bucket, key=lambda bar: Decimal(bar.low_text or str(bar.low)))

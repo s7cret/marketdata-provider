@@ -198,7 +198,9 @@ def test_cli_audit_detects_and_repair_applies(tmp_path: Path, capsys):
     store_dir = tmp_path / "store"
     source = tmp_path / "source.csv"
     source.write_text(
-        "time,open,high,low,close,volume,time_close\n0,1,2,0.5,1.5,10,59999\n"
+        "time,open,high,low,close,volume,time_close,finality,provider,"
+        "provider_revision,revision_state,revision\n"
+        "0,1,2,0.5,1.5,10,59999,FINAL,binance,repair-r1,ORIGINAL,0\n"
     )
     store = CandleStore(store_dir)
     store.commit_closed(mb(0, close=1.8))

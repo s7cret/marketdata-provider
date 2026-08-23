@@ -67,6 +67,11 @@ def _fetch_seeded_public_result(tmp_path: Path) -> object:
         is_closed=True,
         provider="binance",
         provider_revision="fixture-v1",
+        open_text="1.25",
+        high_text="2.5",
+        low_text="1.0",
+        close_text="2.0",
+        volume_text="3.75",
     )
     service = provider.service
     service.store.segments.replace_all(
@@ -236,6 +241,11 @@ def test_public_closed_bar_policy_excludes_open_storage_rows(tmp_path: Path) -> 
         "timeframe": "1m",
         "provider": "binance",
         "provider_revision": "binance-canonical-v2",
+        "open_text": "1.0",
+        "high_text": "2.0",
+        "low_text": "0.5",
+        "close_text": "1.5",
+        "volume_text": "10.0",
     }
     service = provider.service
     service.store.segments.replace_all(
@@ -281,6 +291,11 @@ def test_open_binance_rest_bar_survives_service_and_public_boundaries(
         is_closed=False,
         provider="binance",
         provider_revision="binance-rest-response-1",
+        open_text="1.0",
+        high_text="2.0",
+        low_text="0.5",
+        close_text="1.5",
+        volume_text="10.0",
     )
     monkeypatch.setattr(
         service_module,
@@ -326,6 +341,11 @@ def test_open_binance_rest_bar_survives_service_and_public_boundaries(
         is_closed=True,
         provider="binance",
         provider_revision="binance-rest-response-2",
+        open_text="1.0",
+        high_text="2.0",
+        low_text="0.5",
+        close_text="1.5",
+        volume_text="10.0",
     )
     monkeypatch.setattr(
         service_module,

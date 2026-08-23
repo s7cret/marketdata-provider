@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
 from typing import Any
 
 from openpine_contracts import Finality, RevisionState
@@ -38,12 +37,6 @@ class ProviderRawBar:
     revision: int = 0
 
 
-def _decimal_from_legacy_number(value: object) -> object:
-    if isinstance(value, float):
-        return Decimal(str(value))
-    return value
-
-
 def raw_bar_from_market_bar(
     bar: MarketBar,
     *,
@@ -61,36 +54,33 @@ def raw_bar_from_market_bar(
         raise MDValidationError("provider is required")
     if not source_revision:
         raise MDValidationError("provider_revision is required")
+    decimal_text = {
+        "open": bar.open_text,
+        "high": bar.high_text,
+        "low": bar.low_text,
+        "close": bar.close_text,
+        "volume": bar.volume_text,
+    }
+    missing_text = [
+        name
+        for name, value in decimal_text.items()
+        if not isinstance(value, str) or not value
+    ]
+    if missing_text:
+        raise MDValidationError(
+            "stored/provider bar is missing exact source decimal text: "
+            + ", ".join(missing_text)
+        )
     return ProviderRawBar(
         instrument_id=instrument_id,
         timeframe=timeframe,
         open_time_utc_ms=bar.time,
         close_time_utc_ms=bar.time_close,
-        open=(
-            bar.open_text
-            if bar.open_text is not None
-            else _decimal_from_legacy_number(bar.open)
-        ),
-        high=(
-            bar.high_text
-            if bar.high_text is not None
-            else _decimal_from_legacy_number(bar.high)
-        ),
-        low=(
-            bar.low_text
-            if bar.low_text is not None
-            else _decimal_from_legacy_number(bar.low)
-        ),
-        close=(
-            bar.close_text
-            if bar.close_text is not None
-            else _decimal_from_legacy_number(bar.close)
-        ),
-        volume=(
-            bar.volume_text
-            if bar.volume_text is not None
-            else _decimal_from_legacy_number(bar.volume)
-        ),
+        open=decimal_text["open"],
+        high=decimal_text["high"],
+        low=decimal_text["low"],
+        close=decimal_text["close"],
+        volume=decimal_text["volume"],
         finality=finality_from_closed(bar.is_closed),
         provider=source_provider,
         provider_revision=source_revision,

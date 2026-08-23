@@ -562,8 +562,13 @@ def test_factories_store_provider_and_live_adapter(
                 0.5,
                 1.5,
                 10,
-                True,
-                8,
+                is_closed=True,
+                received_at=8,
+                open_text="1",
+                high_text="2",
+                low_text="0.5",
+                close_text="1.5",
+                volume_text="10",
             )
             yield RawLiveEvent(update, {"x": 1})
 

@@ -10,7 +10,6 @@ from openpine_contracts import Finality, RevisionState
 from marketdata_provider.canonical.bar import build_data_snapshot
 from marketdata_provider.canonical.provider import (
     ProviderRawBar,
-    _decimal_from_legacy_number,
     build_public_snapshot,
     raw_bar_from_market_bar,
     snapshot_from_market_bars,
@@ -84,13 +83,17 @@ def _bar(**changes: object) -> MarketBar:
         "is_closed": True,
         "provider": "binance",
         "provider_revision": "fixture-v1",
+        "open_text": "1.0",
+        "high_text": "2.0",
+        "low_text": "0.5",
+        "close_text": "1.5",
+        "volume_text": "10.0",
     }
     payload.update(changes)
     return MarketBar(**payload)  # type: ignore[arg-type]
 
 
 def test_canonical_provider_fail_closed_edges() -> None:
-    assert _decimal_from_legacy_number("1.25") == "1.25"
     bar = _bar()
 
     object.__setattr__(bar, "is_closed", None)
