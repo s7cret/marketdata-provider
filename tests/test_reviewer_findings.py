@@ -83,6 +83,8 @@ def bar(time: int, **changes: object) -> MarketBar:
         downloaded_at=time + 60_000,
         source="provider-runtime-only",
         metadata={"request_id": "runtime-only"},
+        provider="binance",
+        provider_revision="test-fixture-v1",
     )
     return replace(base, **changes)
 
@@ -665,7 +667,10 @@ def test_service_fallback_merge_preserves_append_interleaved_during_fetch() -> N
 
     segments = Segments()
     service = object.__new__(MarketDataService)
-    service.store = SimpleNamespace(segments=segments)  # type: ignore[assignment]
+    service.store = SimpleNamespace(
+        segments=segments,
+        current=SimpleNamespace(delete_current=lambda _bar: None),
+    )  # type: ignore[assignment]
     service._stored_coverage_complete = lambda _query: False  # type: ignore[method-assign]
     service._stored_bars = lambda _query: list(segments.rows)  # type: ignore[method-assign]
 
@@ -1169,7 +1174,7 @@ def test_presence_unaware_v2_manifest_is_validated_and_migrated(tmp_path: Path) 
 
     migrated = store.append_strictly_newer([], **KEY)
 
-    assert migrated.checksum_algorithm == "sha256-tail-chain-v3"
+    assert migrated.checksum_algorithm == "sha256-tail-chain-v4"
     assert migrated.base_checksum == bars_checksum(items)
     assert migrated.checksum == migrated.base_checksum
     assert store.read_all(**KEY) == [
@@ -1211,7 +1216,7 @@ def test_metadata_only_manifest_migration_is_journaled_and_recovers_index(
     recovered = SegmentStore(tmp_path)
     migrated = recovered.manifest_for(**KEY)
     assert migrated is not None
-    assert migrated.checksum_algorithm == "sha256-tail-chain-v3"
+    assert migrated.checksum_algorithm == "sha256-tail-chain-v4"
     assert not list(tmp_path.rglob(".append-journal.json"))
     with sqlite3.connect(recovered.index_path) as db:
         indexed = db.execute(

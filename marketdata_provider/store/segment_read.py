@@ -13,10 +13,13 @@ from marketdata_provider.store.segment_checksums import (
     LEGACY_TAIL_CHAIN_CHECKSUM,
     PRESENCE_UNAWARE_CANONICAL_CHECKSUM,
     PRESENCE_UNAWARE_TAIL_CHAIN_CHECKSUM,
+    PROVENANCE_CANONICAL_CHECKSUM,
+    PROVENANCE_TAIL_CHAIN_CHECKSUM,
     TAIL_CHAIN_CHECKSUM,
     bars_checksum,
     legacy_bars_checksum,
     presence_unaware_bars_checksum,
+    provenance_bars_checksum,
     validate_persisted_bar_semantics,
 )
 from marketdata_provider.store.segment_integrity import (
@@ -49,12 +52,16 @@ def _parquet_checksum(bars: list[MarketBar], manifest: dict[str, object]) -> str
         return legacy_bars_checksum(bars)
     if algorithm == PRESENCE_UNAWARE_CANONICAL_CHECKSUM:
         return presence_unaware_bars_checksum(bars)
+    if algorithm == PROVENANCE_CANONICAL_CHECKSUM:
+        return provenance_bars_checksum(bars)
     if algorithm == CANONICAL_CHECKSUM:
         return bars_checksum(bars)
     if algorithm == LEGACY_TAIL_CHAIN_CHECKSUM:
         return legacy_bars_checksum(bars)
     if algorithm == PRESENCE_UNAWARE_TAIL_CHAIN_CHECKSUM:
         return presence_unaware_bars_checksum(bars)
+    if algorithm == PROVENANCE_TAIL_CHAIN_CHECKSUM:
+        return provenance_bars_checksum(bars)
     if algorithm == TAIL_CHAIN_CHECKSUM:
         return bars_checksum(bars)
     raise MDInvalidExchangeResponse(

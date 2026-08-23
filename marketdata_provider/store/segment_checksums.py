@@ -17,8 +17,10 @@ LEGACY_CANONICAL_CHECKSUM = "sha256-canonical-v1"
 LEGACY_TAIL_CHAIN_CHECKSUM = "sha256-tail-chain-v1"
 PRESENCE_UNAWARE_CANONICAL_CHECKSUM = "sha256-canonical-v2"
 PRESENCE_UNAWARE_TAIL_CHAIN_CHECKSUM = "sha256-tail-chain-v2"
-CANONICAL_CHECKSUM = "sha256-canonical-v3"
-TAIL_CHAIN_CHECKSUM = "sha256-tail-chain-v3"
+PROVENANCE_CANONICAL_CHECKSUM = "sha256-canonical-v3"
+PROVENANCE_TAIL_CHAIN_CHECKSUM = "sha256-tail-chain-v3"
+CANONICAL_CHECKSUM = "sha256-canonical-v4"
+TAIL_CHAIN_CHECKSUM = "sha256-tail-chain-v4"
 
 
 # SegmentStore deliberately persists every MarketBar field except the runtime-only
@@ -44,6 +46,15 @@ PERSISTED_MARKET_BAR_FIELDS = (
     "source_transport",
     "source_kind",
     "is_closed",
+    "provider",
+    "provider_revision",
+    "revision_state",
+    "revision",
+    "open_text",
+    "high_text",
+    "low_text",
+    "close_text",
+    "volume_text",
     "downloaded_at",
 )
 
@@ -65,6 +76,11 @@ def canonical_candle_payload(bar: MarketBar) -> tuple[object, ...]:
         bar.timeframe,
         bar.source_kind,
         bar.is_closed,
+        bar.open_text,
+        bar.high_text,
+        bar.low_text,
+        bar.close_text,
+        bar.volume_text,
         bar.quote_volume,
         bar.turnover,
         bar.trades_count,
@@ -114,6 +130,14 @@ def presence_unaware_bars_checksum(bars: Iterable[MarketBar]) -> str:
     return digest.hexdigest()
 
 
+def provenance_bars_checksum(bars: Iterable[MarketBar]) -> str:
+    """Compute the pre-decimal-text v3 digest for existing manifests."""
+    digest = hashlib.sha256()
+    for bar in sorted(bars, key=lambda item: item.time):
+        _update_checksum_v3(digest, bar)
+    return digest.hexdigest()
+
+
 def csv_canonical_checksum(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open(newline="") as handle:
@@ -139,6 +163,8 @@ def extend_tail_chain(
         raise MDInvalidExchangeResponse("Invalid segment checksum length")
     if algorithm == TAIL_CHAIN_CHECKSUM:
         row_digest = bytes.fromhex(market_bar_checksum(bar))
+    elif algorithm == PROVENANCE_TAIL_CHAIN_CHECKSUM:
+        row_digest = bytes.fromhex(provenance_bars_checksum([bar]))
     elif algorithm == PRESENCE_UNAWARE_TAIL_CHAIN_CHECKSUM:
         row_digest = bytes.fromhex(presence_unaware_bars_checksum([bar]))
     elif algorithm == LEGACY_TAIL_CHAIN_CHECKSUM:
@@ -161,6 +187,8 @@ def validate_csv_checksum(path: Path, manifest: dict[str, object] | None) -> Non
         LEGACY_TAIL_CHAIN_CHECKSUM,
         PRESENCE_UNAWARE_CANONICAL_CHECKSUM,
         PRESENCE_UNAWARE_TAIL_CHAIN_CHECKSUM,
+        PROVENANCE_CANONICAL_CHECKSUM,
+        PROVENANCE_TAIL_CHAIN_CHECKSUM,
         CANONICAL_CHECKSUM,
         TAIL_CHAIN_CHECKSUM,
     }
@@ -173,6 +201,7 @@ def validate_csv_checksum(path: Path, manifest: dict[str, object] | None) -> Non
     is_tail = algorithm in {
         LEGACY_TAIL_CHAIN_CHECKSUM,
         PRESENCE_UNAWARE_TAIL_CHAIN_CHECKSUM,
+        PROVENANCE_TAIL_CHAIN_CHECKSUM,
         TAIL_CHAIN_CHECKSUM,
     }
     if is_tail and (
@@ -197,6 +226,11 @@ def validate_csv_checksum(path: Path, manifest: dict[str, object] | None) -> Non
                     PRESENCE_UNAWARE_TAIL_CHAIN_CHECKSUM,
                 }:
                     _update_checksum_v2(digest, bar)
+                elif algorithm in {
+                    PROVENANCE_CANONICAL_CHECKSUM,
+                    PROVENANCE_TAIL_CHAIN_CHECKSUM,
+                }:
+                    _update_checksum_v3(digest, bar)
                 else:
                     _update_checksum(digest, bar)
             else:
@@ -250,6 +284,56 @@ def _update_checksum_identity(h: hashlib._Hash, b: MarketBar) -> None:
 def _update_checksum(h: hashlib._Hash, b: MarketBar) -> None:
     """Hash every persisted semantic field using the presence-aware v3 format."""
     _update_checksum_identity(h, b)
+    _update_text(h, b.provider)
+    _update_text(h, b.provider_revision or "")
+    _update_text(h, b.revision_state.value)
+    h.update(struct.pack(">q", b.revision))
+    for value in (
+        b.open_text,
+        b.high_text,
+        b.low_text,
+        b.close_text,
+        b.volume_text,
+    ):
+        h.update(b"\x00" if value is None else b"\x01")
+        if value is not None:
+            _update_text(h, value)
+    h.update(
+        struct.pack(
+            ">qqqqddddddddd????????",
+            b.time,
+            b.time_close if b.time_close is not None else 0,
+            b.trades_count if b.trades_count is not None else 0,
+            b.downloaded_at if b.downloaded_at is not None else 0,
+            b.open,
+            b.high,
+            b.low,
+            b.close,
+            b.volume,
+            b.quote_volume if b.quote_volume is not None else 0.0,
+            b.turnover if b.turnover is not None else 0.0,
+            b.taker_buy_base_volume if b.taker_buy_base_volume is not None else 0.0,
+            b.taker_buy_quote_volume if b.taker_buy_quote_volume is not None else 0.0,
+            b.time_close is not None,
+            b.trades_count is not None,
+            b.downloaded_at is not None,
+            b.quote_volume is not None,
+            b.turnover is not None,
+            b.taker_buy_base_volume is not None,
+            b.taker_buy_quote_volume is not None,
+            b.is_closed,
+        )
+    )
+    h.update(b"\n")
+
+
+def _update_checksum_v3(h: hashlib._Hash, b: MarketBar) -> None:
+    """Pre-decimal-text provenance digest retained for v3 manifests."""
+    _update_checksum_identity(h, b)
+    _update_text(h, b.provider)
+    _update_text(h, b.provider_revision or "")
+    _update_text(h, b.revision_state.value)
+    h.update(struct.pack(">q", b.revision))
     h.update(
         struct.pack(
             ">qqqqddddddddd????????",

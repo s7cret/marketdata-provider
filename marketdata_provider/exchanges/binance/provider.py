@@ -166,12 +166,9 @@ def binance_get_bars_sync(
                 )
             if end is not None and cursor >= end:
                 break
-    # De-duplicate page overlaps deterministically.
+    # De-duplicate page overlaps without erasing MarketBar finality/provenance.
     by_time = {b.time: b for b in out}
-    final = [
-        Bar(b.time, b.open, b.high, b.low, b.close, b.volume, b.time_close)
-        for b in (by_time[t] for t in sorted(by_time))
-    ]
+    final = [by_time[t] for t in sorted(by_time)]
     if max_bars is not None:
         final = final[:max_bars]
     validate_bars(final)

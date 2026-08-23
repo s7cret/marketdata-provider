@@ -4,16 +4,25 @@ import threading
 from collections.abc import Iterable
 from dataclasses import replace
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Protocol
 
+from openpine_contracts import RevisionState
+from openpine_contracts.hashing import content_hash
+
 from marketdata_provider._adapters import series_from_market_bars
+from marketdata_provider.canonical.source_identity import bind_source_identity
 from marketdata_provider.config import MarketDataConfig
 from marketdata_provider.contracts.errors import CoverageValidationError
 from marketdata_provider.contracts.query import BarQuery
 from marketdata_provider.contracts.series import BarSeries
 from marketdata_provider.contracts.timeframe import Timeframe, parse_timeframe
 from marketdata_provider.core.bar import Bar, MarketBar
-from marketdata_provider.errors import MDUnsupportedFeature
+from marketdata_provider.errors import (
+    MDMissingFinality,
+    MDUnsupportedFeature,
+    MDValidationError,
+)
 from marketdata_provider.exchanges.binance.archive import fetch_binance_archive_bars
 from marketdata_provider.exchanges.binance.provider import binance_get_bars_sync
 from marketdata_provider.exchanges.bybit.provider import bybit_get_bars_sync
@@ -47,14 +56,18 @@ class BinanceArchiveSource:
             cache_dir=self.config.storage.cache_dir,
             progress_callback=progress_callback,
         )
-        return [
+        converted = [
             _market_bar_from_core(
                 bar,
                 query=query,
                 source_transport="archive",
+                finality=True,
             )
             for bar in bars
         ]
+        return bind_source_identity(
+            converted, query=query, provider="binance", source_transport="archive"
+        )
 
 
 class BinanceRestSource:
@@ -71,10 +84,13 @@ class BinanceRestSource:
             market=query.instrument.market,
             include_open_candle=self.config.include_open_candle,
         )
-        return [
+        converted = [
             _market_bar_from_core(bar, query=query, source_transport="rest")
             for bar in bars
         ]
+        return bind_source_identity(
+            converted, query=query, provider="binance", source_transport="rest"
+        )
 
 
 class BybitRestSource:
@@ -91,10 +107,13 @@ class BybitRestSource:
             market=query.instrument.market,
             include_open_candle=self.config.include_open_candle,
         )
-        return [
+        converted = [
             _market_bar_from_core(bar, query=query, source_transport="rest")
             for bar in bars
         ]
+        return bind_source_identity(
+            converted, query=query, provider="bybit", source_transport="rest"
+        )
 
 
 class PublicMarketRestSource:
@@ -123,10 +142,16 @@ class PublicMarketRestSource:
                 user_agent=self.config.binance.user_agent,
                 include_open_candle=self.config.include_open_candle,
             )
-        return [
+        converted = [
             _market_bar_from_core(bar, query=query, source_transport="rest")
             for bar in bars
         ]
+        return bind_source_identity(
+            converted,
+            query=query,
+            provider=query.instrument.exchange,
+            source_transport="rest",
+        )
 
 
 class MarketDataService:
@@ -334,6 +359,16 @@ class MarketDataService:
         fetched = self._fetch_from_sources(query, progress_callback=progress_callback)
         if not fetched:
             return False
+        finalized: list[MarketBar] = []
+        persisted_open = False
+        for bar in fetched:
+            if bar.is_closed:
+                finalized.append(bar)
+            else:
+                self.store.upsert_open(bar)
+                persisted_open = True
+        if not finalized:
+            return persisted_open
         key = {
             "exchange": query.instrument.exchange,
             "market": query.instrument.market,
@@ -353,7 +388,7 @@ class MarketDataService:
                 timeframe=key["timeframe"],
             )
             by_time = {bar.time: bar for bar in current}
-            for bar in fetched:
+            for bar in finalized:
                 by_time[bar.time] = bar
             self.store.segments._replace_all_locked(
                 [by_time[item] for item in sorted(by_time)],
@@ -362,16 +397,27 @@ class MarketDataService:
                 symbol=key["symbol"],
                 timeframe=key["timeframe"],
             )
+        for bar in finalized:
+            self.store.current.delete_current(bar)
         return True
 
     def _append_stream(self, query: BarQuery, fetched_tail: list[MarketBar]) -> None:
-        self.store.segments.append_strictly_newer(
-            fetched_tail,
-            exchange=query.instrument.exchange,
-            market=query.instrument.market,
-            symbol=query.instrument.symbol,
-            timeframe=query.timeframe.canonical,
-        )
+        finalized: list[MarketBar] = []
+        for bar in fetched_tail:
+            if bar.is_closed:
+                finalized.append(bar)
+            else:
+                self.store.upsert_open(bar)
+        if finalized:
+            self.store.segments.append_strictly_newer(
+                finalized,
+                exchange=query.instrument.exchange,
+                market=query.instrument.market,
+                symbol=query.instrument.symbol,
+                timeframe=query.timeframe.canonical,
+            )
+            for bar in finalized:
+                self.store.current.delete_current(bar)
 
     def _stored_span_complete(self, query: BarQuery) -> bool:
         manifest = self.store.segments.manifest_for(
@@ -452,8 +498,21 @@ class MarketDataService:
 
 
 def _market_bar_from_core(
-    bar: Bar, *, query: BarQuery, source_transport: str
+    bar: Bar,
+    *,
+    query: BarQuery,
+    source_transport: str,
+    finality: bool | None = None,
 ) -> MarketBar:
+    close_time = bar.time_close
+    if close_time is None:
+        raise MDValidationError("source bar is missing explicit close time")
+    if isinstance(bar, MarketBar):
+        closed = bar.is_closed
+    else:
+        closed = finality
+    if closed is None:
+        raise MDMissingFinality("source bar is missing explicit finality")
     return MarketBar(
         time=bar.time,
         open=bar.open,
@@ -461,14 +520,37 @@ def _market_bar_from_core(
         low=bar.low,
         close=bar.close,
         volume=bar.volume,
-        time_close=bar.time_close or close_time_ms(bar.time, query.timeframe.canonical),
+        time_close=close_time,
         exchange=query.instrument.exchange,
         market=query.instrument.market,
         symbol=query.instrument.symbol,
         timeframe=query.timeframe.canonical,
         source_transport=source_transport,
-        source_kind="trade_kline",
-        is_closed=True,
+        source_kind=(bar.source_kind if isinstance(bar, MarketBar) else "trade_kline"),
+        is_closed=closed,
+        provider=(bar.provider if isinstance(bar, MarketBar) else ""),
+        provider_revision=(
+            bar.provider_revision if isinstance(bar, MarketBar) else None
+        ),
+        revision_state=(
+            bar.revision_state if isinstance(bar, MarketBar) else RevisionState.ORIGINAL
+        ),
+        revision=(bar.revision if isinstance(bar, MarketBar) else 0),
+        open_text=(bar.open_text if isinstance(bar, MarketBar) else None),
+        high_text=(bar.high_text if isinstance(bar, MarketBar) else None),
+        low_text=(bar.low_text if isinstance(bar, MarketBar) else None),
+        close_text=(bar.close_text if isinstance(bar, MarketBar) else None),
+        volume_text=(bar.volume_text if isinstance(bar, MarketBar) else None),
+        quote_volume=(bar.quote_volume if isinstance(bar, MarketBar) else None),
+        turnover=(bar.turnover if isinstance(bar, MarketBar) else None),
+        trades_count=(bar.trades_count if isinstance(bar, MarketBar) else None),
+        taker_buy_base_volume=(
+            bar.taker_buy_base_volume if isinstance(bar, MarketBar) else None
+        ),
+        taker_buy_quote_volume=(
+            bar.taker_buy_quote_volume if isinstance(bar, MarketBar) else None
+        ),
+        downloaded_at=(bar.downloaded_at if isinstance(bar, MarketBar) else None),
     )
 
 
@@ -558,6 +640,31 @@ def _aggregate_bucket(
 ) -> MarketBar:
     traded = [bar for bar in bucket if bar.volume > 0]
     price_bucket = traded or bucket
+    providers = {bar.provider for bar in bucket if bar.provider}
+    if len(providers) != 1:
+        raise MDValidationError("aggregate bucket requires one provider")
+    provider = next(iter(providers))
+    provider_revision = content_hash(
+        {
+            "provider": provider,
+            "source_revisions": sorted(
+                {
+                    bar.provider_revision
+                    for bar in bucket
+                    if bar.provider_revision is not None
+                }
+            ),
+            "timeframe": query.timeframe.canonical,
+            "bucket_time": bucket_time,
+            "source_times": [bar.time for bar in bucket],
+        },
+        schema_id="marketdata-provider.aggregate-revision.v1",
+    )
+    high_source = max(bucket, key=lambda bar: Decimal(bar.high_text or str(bar.high)))
+    low_source = min(bucket, key=lambda bar: Decimal(bar.low_text or str(bar.low)))
+    volume_decimal = sum(
+        (Decimal(bar.volume_text or str(bar.volume)) for bar in bucket), Decimal(0)
+    )
     return MarketBar(
         time=bucket_time,
         open=price_bucket[0].open,
@@ -572,5 +679,12 @@ def _aggregate_bucket(
         timeframe=query.timeframe.canonical,
         source_transport="derived",
         source_kind="trade_kline",
-        is_closed=True,
+        is_closed=all(bar.is_closed is True for bar in bucket),
+        provider=provider,
+        provider_revision=provider_revision,
+        open_text=price_bucket[0].open_text or str(price_bucket[0].open),
+        high_text=high_source.high_text or str(high_source.high),
+        low_text=low_source.low_text or str(low_source.low),
+        close_text=price_bucket[-1].close_text or str(price_bucket[-1].close),
+        volume_text=format(volume_decimal, "f"),
     )

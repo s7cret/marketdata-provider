@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from marketdata_provider.config import MarketDataConfig, StorageConfig
 from marketdata_provider.contracts import BarQuery, InstrumentKey, parse_timeframe
-from marketdata_provider.core.bar import Bar
+from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.exchanges.registry import list_exchanges
 from marketdata_provider.service import MarketDataService
 from marketdata_provider.symbols import search_symbols
@@ -199,7 +199,24 @@ def test_market_data_service_routes_native_spot_exchange_to_public_spot_source(
 
     def fake_public_spot_get_bars_sync(**kwargs):
         calls.append(kwargs)
-        return [Bar(0, 1.0, 2.0, 0.5, 1.5, 10.0, 60_000)]
+        return [
+            MarketBar(
+                0,
+                1.0,
+                2.0,
+                0.5,
+                1.5,
+                10.0,
+                60_000,
+                exchange="okx",
+                market="spot",
+                symbol="BTC-USDT",
+                timeframe="1m",
+                is_closed=True,
+                provider="okx",
+                provider_revision="fixture-v1",
+            )
+        ]
 
     monkeypatch.setattr(
         service_mod,

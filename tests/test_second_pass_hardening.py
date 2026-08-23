@@ -21,8 +21,10 @@ from marketdata_provider.contracts.timeframe import parse_timeframe
 from marketdata_provider.core.bar import RUNTIME_CONTRACT_VERSION, Bar, MarketBar
 from marketdata_provider.errors import (
     MDInvalidExchangeResponse,
+    MDMissingFinality,
     MDNetworkUnavailable,
     MDUnsupportedFeature,
+    MDValidationError,
 )
 from marketdata_provider.exchanges.binance import archive as binance_archive
 from marketdata_provider.exchanges.binance import trades as binance_trades
@@ -43,7 +45,14 @@ from marketdata_provider.streaming.live import PublicKlineWebSocketClient
 
 
 def mb(
-    t: int, close: float = 1.5, *, source: str = "rest", timeframe: str = "1m"
+    t: int,
+    close: float = 1.5,
+    *,
+    source: str = "rest",
+    timeframe: str = "1m",
+    exchange: str = "binance",
+    market: str = "spot",
+    closed: bool = True,
 ) -> MarketBar:
     return MarketBar(
         time=t,
@@ -53,14 +62,16 @@ def mb(
         close=close,
         volume=10.0,
         time_close=t + 59_999,
-        exchange="binance",
-        market="spot",
+        exchange=exchange,
+        market=market,
         symbol="BTCUSDT",
         timeframe=timeframe,
         source_transport=source,
         source_kind="trade_kline",
-        is_closed=True,
+        is_closed=closed,
         downloaded_at=t + 60_000,
+        provider=exchange,
+        provider_revision="test-fixture-v1",
     )
 
 
@@ -121,7 +132,7 @@ def test_service_sources_and_remaining_query_branches(
     )
     monkeypatch.setattr(
         "marketdata_provider.service.fetch_binance_archive_bars",
-        lambda **kwargs: [Bar(0, 1, 2, 0.5, 1.5, 10, None)],
+        lambda **kwargs: [Bar(0, 1, 2, 0.5, 1.5, 10, 59_999)],
     )
     assert BinanceArchiveSource(cfg).fetch(query(start=60_000, end=120_000)) == []
     archive = BinanceArchiveSource(cfg).fetch(q)
@@ -129,12 +140,14 @@ def test_service_sources_and_remaining_query_branches(
     assert archive[0].time_close == 59_999
     monkeypatch.setattr(
         "marketdata_provider.service.binance_get_bars_sync",
-        lambda *args, **kwargs: [Bar(60_000, 2, 3, 1, 2.5, 5, 119_999)],
+        lambda *args, **kwargs: [mb(60_000, close=2.5)],
     )
     assert BinanceRestSource(cfg).fetch(q)[0].source_transport == "rest"
     monkeypatch.setattr(
         "marketdata_provider.service.bybit_get_bars_sync",
-        lambda *args, **kwargs: [Bar(60_000, 2, 3, 1, 2.5, 5, None)],
+        lambda *args, **kwargs: [
+            mb(60_000, close=2.5, exchange="bybit", market="linear")
+        ],
     )
     assert BybitRestSource(cfg).fetch(query(exchange="bybit"))[0].exchange == "bybit"
 
@@ -145,12 +158,18 @@ def test_service_sources_and_remaining_query_branches(
         _merge_bars([mb(0, close=1)], [mb(0, close=2), mb(60_000, close=3)])[0].close
         == 2
     )
-    assert (
+    with pytest.raises(MDValidationError, match="close time"):
         _market_bar_from_core(
-            Bar(0, 1, 2, 0.5, 1.5, None, None), query=q, source_transport="x"
-        ).time_close
-        == 59_999
-    )
+            Bar(0, 1, 2, 0.5, 1.5, 1, None),
+            query=q,
+            source_transport="x",
+        )
+    with pytest.raises(MDMissingFinality):
+        _market_bar_from_core(
+            Bar(0, 1, 2, 0.5, 1.5, 1, 59_999),
+            query=q,
+            source_transport="x",
+        )
 
 
 def test_service_fetch_and_materialize_tail_append_and_unsupported(
@@ -270,8 +289,10 @@ def test_segment_store_integrity_streaming_and_vacuum(
     unchanged = json.loads(manifest_path.read_text())
     assert unchanged["checksum"] == "bad"
 
-    assert store._parse_bool(None) is True
-    assert store._parse_bool("") is True
+    with pytest.raises(MDMissingFinality):
+        store._parse_bool(None)
+    with pytest.raises(MDMissingFinality):
+        store._parse_bool("")
     assert store._parse_bool(False) is False
     assert store._parse_bool(0) is False
     assert store._parse_bool("yes") is True
@@ -463,10 +484,10 @@ def test_factories_store_provider_and_live_adapter(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from marketdata_provider import factories
+    from marketdata_provider.compat.v4 import create_legacy_candle_store
     from marketdata_provider.contracts.bar import Bar as ContractBar
     from marketdata_provider.contracts.series import BarSeries, CoverageReport
     from marketdata_provider.factories import (
-        create_candle_store,
         create_live_kline_client,
         create_provider,
     )
@@ -476,7 +497,7 @@ def test_factories_store_provider_and_live_adapter(
     q = BarQuery(inst, tf, 0, 60_000)
     contract_bar = ContractBar(inst, tf, 0, 59_999, 1, 2, 0.5, 1.5, 10, True)
     series = BarSeries(q, (contract_bar,), CoverageReport(0, 60_000, 0, 59_999))
-    store = create_candle_store(
+    store = create_legacy_candle_store(
         MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path / "store"))
     )
     assert store.write(series).rows_written == 1
@@ -513,7 +534,9 @@ def test_factories_store_provider_and_live_adapter(
             return series
 
     monkeypatch.setattr(factories, "MarketDataService", FakeService)
-    assert create_provider(MarketDataConfig()).fetch_bars(q) is series
+    from marketdata_provider.compat.v4 import create_legacy_provider
+
+    assert create_legacy_provider(MarketDataConfig()).fetch_bars(q) is series
     with pytest.raises(MDUnsupportedFeature):
         create_provider(MarketDataConfig(default_exchange="bitstamp")).fetch_bars(q)
 
@@ -563,7 +586,7 @@ def test_factories_store_provider_and_live_adapter(
             raw_events.append(event)
 
     asyncio.run(collect())
-    assert raw_events[0].bar.close == 1.5
+    assert raw_events[0].bar["close"] == "1.5"
     assert raw_events[0].raw_payload == {"x": 1}
 
 

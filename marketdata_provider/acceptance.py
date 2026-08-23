@@ -220,6 +220,8 @@ def _market_bar(time_ms: int, *, close: float = 1.5) -> MarketBar:
         source_transport="rest",
         source_kind="trade_kline",
         is_closed=True,
+        provider="binance",
+        provider_revision="acceptance-fixture-v1",
         downloaded_at=time_ms + 60_000,
     )
 

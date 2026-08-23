@@ -7,6 +7,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
+from openpine_contracts.hashing import content_hash
+
 from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.providers import OfflineDataProvider
 from marketdata_provider.store.candle_store import CandleStore
@@ -54,6 +56,22 @@ def market_bar_from_bar(
     source_transport: str = "rest",
     source_kind: str = "trade_kline",
 ) -> MarketBar:
+    provider_revision = content_hash(
+        {
+            "provider": exchange.lower(),
+            "source_transport": source_transport,
+            "symbol": symbol.upper(),
+            "timeframe": canonical_timeframe(timeframe),
+            "time": bar.time,
+            "time_close": bar.time_close,
+            "open": str(bar.open),
+            "high": str(bar.high),
+            "low": str(bar.low),
+            "close": str(bar.close),
+            "volume": str(bar.volume),
+        },
+        schema_id="marketdata-provider.repair-source.v1",
+    )
     return MarketBar(
         time=bar.time,
         open=bar.open,
@@ -69,6 +87,8 @@ def market_bar_from_bar(
         source_transport=source_transport,
         source_kind=source_kind,
         is_closed=True,
+        provider=exchange.lower(),
+        provider_revision=provider_revision,
     )
 
 

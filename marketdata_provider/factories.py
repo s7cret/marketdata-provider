@@ -1,13 +1,23 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+import csv
+from collections.abc import AsyncIterator, Mapping
 from pathlib import Path
+from typing import Any
+
+from openpine_contracts import Finality, RevisionState
+from openpine_contracts.hashing import content_hash
 
 from marketdata_provider._adapters import (
     contract_to_market_bar,
-    core_to_contract_bar,
     series_from_core_bars,
     series_from_market_bars,
+)
+from marketdata_provider.canonical.bar import DataSnapshotV2, build_data_snapshot
+from marketdata_provider.canonical.provider import (
+    ProviderRawBar,
+    build_public_snapshot,
+    snapshot_from_market_bars,
 )
 from marketdata_provider.config import MarketDataConfig
 from marketdata_provider.contracts.errors import CoverageValidationError
@@ -28,7 +38,11 @@ from marketdata_provider.contracts.query import BarQuery
 from marketdata_provider.contracts.series import BarSeries, CoverageReport, StoreResult
 from marketdata_provider.contracts.timeframe import Timeframe, parse_timeframe
 from marketdata_provider.core.bar import MarketBar
-from marketdata_provider.errors import MDUnsupportedFeature
+from marketdata_provider.errors import (
+    MDMissingFinality,
+    MDUnsupportedFeature,
+    MDValidationError,
+)
 from marketdata_provider.exchanges.registry import list_exchanges
 from marketdata_provider.footprint.service import FootprintService
 from marketdata_provider.providers.offline import OfflineDataProvider
@@ -37,6 +51,7 @@ from marketdata_provider.store.candle_store import CandleStore as SegmentCandleS
 from marketdata_provider.store.segment_checksums import same_canonical_candle
 
 _NATIVE_EXCHANGE_IDS = {exchange.id for exchange in list_exchanges(native_only=True)}
+_CANONICAL_V2_EXCHANGE_IDS = {"binance", "bybit"}
 
 
 def create_provider(config: MarketDataConfig) -> MarketDataProviderProtocol:
@@ -47,6 +62,14 @@ def create_provider(config: MarketDataConfig) -> MarketDataProviderProtocol:
     return _ExchangeProviderAdapter(config)
 
 
+def _create_legacy_provider(config: MarketDataConfig):
+    """Build the explicitly requested pre-v5 BarSeries compatibility adapter."""
+
+    if config.offline.root is not None:
+        return _LegacyOfflineProviderAdapter(config.offline.root)
+    return _LegacyExchangeProviderAdapter(config)
+
+
 def create_footprint_provider(config: MarketDataConfig) -> FootprintProviderProtocol:
     """Create the raw-trade footprint provider."""
 
@@ -55,6 +78,12 @@ def create_footprint_provider(config: MarketDataConfig) -> FootprintProviderProt
 
 def create_candle_store(config: MarketDataConfig) -> CandleStoreProtocol:
     """Create a canonical candle store from local package config."""
+
+    return _CanonicalCandleStoreAdapter(SegmentCandleStore(config.storage.cache_dir))
+
+
+def _create_legacy_candle_store(config: MarketDataConfig):
+    """Build the explicit pre-v5 BarSeries candle-store adapter."""
 
     return _CandleStoreAdapter(SegmentCandleStore(config.storage.cache_dir))
 
@@ -94,14 +123,162 @@ class _ExchangeProviderAdapter:
         self.config = config
         self.service = MarketDataService(config)
 
-    def fetch_bars(self, query: BarQuery, progress_callback=None) -> BarSeries:
+    def fetch_bars(self, query: BarQuery, progress_callback=None) -> DataSnapshotV2:
         exchange = (self.config.default_exchange or query.instrument.exchange).lower()
         if exchange not in _NATIVE_EXCHANGE_IDS:
             raise MDUnsupportedFeature(f"Unsupported provider exchange: {exchange}")
-        return self.service.fetch_bars(query, progress_callback=progress_callback)
+        if exchange not in _CANONICAL_V2_EXCHANGE_IDS:
+            raise MDUnsupportedFeature(
+                f"Canonical v2 finality is unavailable for exchange: {exchange}"
+            )
+        self.service.fetch_bars(query, progress_callback=progress_callback)
+        bars = self.service._stored_bars(query)
+        current = self.service.store.get_current_market_candle(
+            exchange=query.instrument.exchange,
+            market=query.instrument.market,
+            symbol=query.instrument.symbol,
+            timeframe=query.timeframe.canonical,
+        )
+        if current is not None and query.start_ms <= current.time < query.end_ms:
+            bars = [*bars, current]
+            bars.sort(key=lambda item: (item.time, item.revision))
+        provider, provider_revision = _snapshot_source_identity(
+            query, bars, default_provider=exchange
+        )
+        return snapshot_from_market_bars(
+            query,
+            bars,
+            provider=provider,
+            provider_revision=provider_revision,
+        )
+
+
+def _snapshot_source_identity(
+    query: BarQuery,
+    bars: list[MarketBar],
+    *,
+    default_provider: str,
+) -> tuple[str, str]:
+    providers = {bar.provider for bar in bars if bar.provider}
+    if len(providers) > 1 or (providers and providers != {default_provider}):
+        raise MDValidationError("stored bars disagree on provider identity")
+    provider = next(iter(providers), default_provider)
+    revisions = {
+        bar.provider_revision for bar in bars if bar.provider_revision is not None
+    }
+    if len(revisions) == 1 and all(bar.provider_revision is not None for bar in bars):
+        return provider, next(iter(revisions))
+    if revisions and any(bar.provider_revision is None for bar in bars):
+        raise MDValidationError("stored bars have partial provider_revision identity")
+    revision = content_hash(
+        {
+            "provider": provider,
+            "instrument_id": query.instrument.serialize(),
+            "timeframe": query.timeframe.canonical,
+            "start_ms": query.start_ms,
+            "end_ms": query.end_ms,
+            "source_revisions": sorted(revisions),
+            "bars": [
+                {
+                    "provider_revision": bar.provider_revision,
+                    "time": bar.time,
+                    "time_close": bar.time_close,
+                    "open": bar.open_text or str(bar.open),
+                    "high": bar.high_text or str(bar.high),
+                    "low": bar.low_text or str(bar.low),
+                    "close": bar.close_text or str(bar.close),
+                    "volume": bar.volume_text or str(bar.volume),
+                    "is_closed": bar.is_closed,
+                }
+                for bar in bars
+            ],
+        },
+        schema_id="marketdata-provider.snapshot-source.v1",
+    )
+    return provider, revision
 
 
 class _OfflineProviderAdapter:
+    def __init__(self, root: str | Path):
+        self.provider = OfflineDataProvider(root)
+
+    def fetch_bars(self, query: BarQuery) -> DataSnapshotV2:
+        if self.provider.path.suffix.lower() != ".csv":
+            raise MDUnsupportedFeature(
+                "canonical offline boundary currently requires CSV"
+            )
+        with self.provider.path.open(newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        raw_bars: list[ProviderRawBar] = []
+        revisions: set[str] = set()
+        for row in rows:
+            open_time = int(str(row.get("time") or row.get("open_time") or 0))
+            if not (query.start_ms <= open_time < query.end_ms):
+                continue
+            finality_raw = row.get("finality")
+            if finality_raw in (None, ""):
+                raise MDMissingFinality("offline row finality is required")
+            try:
+                finality = Finality(str(finality_raw))
+            except ValueError as exc:
+                raise MDValidationError("offline row finality is invalid") from exc
+            provider_revision = str(row.get("provider_revision") or "")
+            if not provider_revision:
+                raise MDValidationError("offline row provider_revision is required")
+            provider = str(row.get("provider") or "")
+            if not provider:
+                raise MDValidationError("offline row provider is required")
+            close_time_raw = row.get("time_close")
+            if close_time_raw in (None, ""):
+                raise MDValidationError("offline row time_close is required")
+            revision_state_raw = row.get("revision_state")
+            if revision_state_raw in (None, ""):
+                raise MDValidationError("offline row revision_state is required")
+            revision_raw = row.get("revision")
+            if revision_raw in (None, ""):
+                raise MDValidationError("offline row revision is required")
+            try:
+                revision_state = RevisionState(str(revision_state_raw))
+                revision = int(str(revision_raw))
+            except ValueError as exc:
+                raise MDValidationError(
+                    "offline row revision identity is invalid"
+                ) from exc
+            revisions.add(provider_revision)
+            raw_bars.append(
+                ProviderRawBar(
+                    instrument_id=query.instrument.serialize(),
+                    timeframe=query.timeframe.canonical,
+                    open_time_utc_ms=open_time,
+                    close_time_utc_ms=int(str(close_time_raw)),
+                    open=row["open"],
+                    high=row["high"],
+                    low=row["low"],
+                    close=row["close"],
+                    volume=row.get("volume") or "0",
+                    finality=finality,
+                    provider=provider,
+                    provider_revision=provider_revision,
+                    revision_state=revision_state,
+                    revision=revision,
+                )
+            )
+        if len(revisions) != 1:
+            raise MDValidationError("offline query requires one provider_revision")
+        return build_public_snapshot(
+            query, raw_bars, provider_revision=next(iter(revisions))
+        )
+
+
+class _LegacyExchangeProviderAdapter:
+    def __init__(self, config: MarketDataConfig):
+        self.service = MarketDataService(config)
+
+    def fetch_bars(self, query: BarQuery, progress_callback=None) -> BarSeries:
+        return self.service.fetch_bars(query, progress_callback=progress_callback)
+
+
+class _LegacyOfflineProviderAdapter:
     def __init__(self, root: str | Path):
         self.provider = OfflineDataProvider(root)
 
@@ -121,6 +298,115 @@ class _FootprintProviderAdapter:
 
     def fetch_footprint(self, query: FootprintQuery) -> FootprintSeries:
         return self.service.fetch_footprint(query)
+
+
+class _CanonicalCandleStoreAdapter:
+    def __init__(self, store: SegmentCandleStore):
+        self.store = store
+
+    def read(self, query: BarQuery) -> DataSnapshotV2:
+        bars = self.store.get_market_bars(
+            exchange=query.instrument.exchange,
+            market=query.instrument.market,
+            symbol=query.instrument.symbol,
+            timeframe=query.timeframe.canonical,
+            start=query.start_ms,
+            end=query.end_ms,
+        )
+        error = _stored_bars_read_error(query, tuple(bars))
+        if error is not None:
+            raise CoverageValidationError(error)
+        provider, provider_revision = _snapshot_source_identity(
+            query, bars, default_provider=query.instrument.exchange
+        )
+        return snapshot_from_market_bars(
+            query,
+            bars,
+            provider=provider,
+            provider_revision=provider_revision,
+        )
+
+    def write(self, snapshot: DataSnapshotV2) -> StoreResult:
+        rows_written = 0
+        try:
+            validated = _validate_canonical_snapshot(snapshot)
+            for raw_bar in validated["bars"]:
+                market_bar = _market_bar_from_canonical(raw_bar)
+                result = (
+                    self.store.commit_closed(market_bar)
+                    if market_bar.is_closed
+                    else self.store.upsert_open(market_bar)
+                )
+                if result.status in {"committed", "upserted"}:
+                    rows_written += 1
+        except Exception as exc:
+            return StoreResult(success=False, rows_written=rows_written, error=str(exc))
+        return StoreResult(success=True, rows_written=rows_written)
+
+    def coverage(self, query: BarQuery) -> Mapping[str, Any]:
+        return self.read(query)["coverage"]
+
+    def latest_bar_time(self, query: BarQuery) -> int | None:
+        return self.store.latest_bar_time(
+            exchange=query.instrument.exchange,
+            market=query.instrument.market,
+            symbol=query.instrument.symbol,
+            timeframe=query.timeframe.canonical,
+        )
+
+
+def _validate_canonical_snapshot(snapshot: Mapping[str, Any]) -> DataSnapshotV2:
+    query = snapshot.get("query")
+    bars = snapshot.get("bars")
+    if not isinstance(query, Mapping) or not isinstance(bars, list):
+        raise MDValidationError("canonical snapshot query/bars are required")
+    created_at = snapshot.get("created_at_utc_ms")
+    if isinstance(created_at, bool) or not isinstance(created_at, int):
+        raise MDValidationError("canonical snapshot created_at_utc_ms is required")
+    validated = build_data_snapshot(
+        snapshot_id=str(snapshot["snapshot_id"]),
+        instrument_id=str(query["instrument_id"]),
+        timeframe=str(query["timeframe"]),
+        provider_revision=str(query["provider_revision"]),
+        start_utc_ms=int(query["start_utc_ms"]),
+        end_utc_ms=int(query["end_utc_ms"]),
+        bars=bars,
+        finality_policy=str(query["finality_policy"]),
+        clock=lambda: created_at,
+    )
+    if validated["series_hash"] != snapshot.get("series_hash"):
+        raise MDValidationError("canonical snapshot series_hash verification failed")
+    return validated
+
+
+def _market_bar_from_canonical(bar: Mapping[str, Any]) -> MarketBar:
+    instrument = InstrumentKey.parse(str(bar["instrument_id"]))
+    finality = Finality(str(bar["finality"]))
+    revision_state = RevisionState(str(bar["revision_state"]))
+    return MarketBar(
+        time=int(bar["open_time_utc_ms"]),
+        time_close=int(bar["close_time_utc_ms"]),
+        open=float(str(bar["open"])),
+        high=float(str(bar["high"])),
+        low=float(str(bar["low"])),
+        close=float(str(bar["close"])),
+        volume=float(str(bar["volume"])),
+        exchange=instrument.exchange,
+        market=instrument.market,
+        symbol=instrument.symbol,
+        timeframe=str(bar["timeframe"]),
+        source_transport="canonical",
+        is_closed=finality is Finality.FINAL,
+        provider=str(bar["provider"]),
+        provider_revision=str(bar["provider_revision"]),
+        revision_state=revision_state,
+        revision=int(bar["revision"]),
+        open_text=str(bar["open"]),
+        high_text=str(bar["high"]),
+        low_text=str(bar["low"]),
+        close_text=str(bar["close"]),
+        volume_text=str(bar["volume"]),
+    )
 
 
 class _CandleStoreAdapter:
@@ -367,8 +653,26 @@ class _LiveKlineClientAdapter:
             update = event.update
             instrument = InstrumentKey(update.exchange, update.market, update.symbol)
             timeframe = parse_timeframe(update.timeframe)
+            market_bar = update.to_market_bar()
+            if market_bar.time_close is None:
+                raise MDValidationError("live kline is missing explicit close time")
+            if not market_bar.provider_revision:
+                raise MDValidationError("live kline is missing provider_revision")
+            snapshot = snapshot_from_market_bars(
+                BarQuery(
+                    instrument,
+                    timeframe,
+                    market_bar.time,
+                    market_bar.time_close + 1,
+                    source="provider",
+                ),
+                [market_bar],
+                provider=market_bar.provider or instrument.exchange,
+                provider_revision=market_bar.provider_revision,
+                finality_policy="ALLOW_OPEN",
+            )
             yield LiveKlineEvent(
-                bar=core_to_contract_bar(instrument, timeframe, update.to_market_bar()),
+                bar=snapshot["bars"][0],
                 event_time=update.event_time,
                 received_at=update.received_at,
                 raw_payload=dict(event.raw_payload),

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from openpine_contracts.hashing import content_hash
+
 from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.timeframes import (
     canonical_timeframe,
@@ -35,8 +37,31 @@ class KlineUpdate:
     raw_source: Literal["rest", "ws"] = "ws"
     raw_event_id: str | None = None
     received_at: int | None = None
+    open_text: str | None = None
+    high_text: str | None = None
+    low_text: str | None = None
+    close_text: str | None = None
+    volume_text: str | None = None
 
     def to_market_bar(self, *, downloaded_at: int | None = None) -> MarketBar:
+        provider_revision = self.raw_event_id or content_hash(
+            {
+                "exchange": self.exchange,
+                "market": self.market,
+                "symbol": self.symbol,
+                "timeframe": self.timeframe,
+                "event_time": self.event_time,
+                "open_time": self.open_time,
+                "close_time": self.close_time,
+                "open": str(self.open),
+                "high": str(self.high),
+                "low": str(self.low),
+                "close": str(self.close),
+                "volume": str(self.volume),
+                "is_closed": self.is_closed,
+            },
+            schema_id="marketdata-provider.stream-revision.v1",
+        )
         return MarketBar(
             time=self.open_time,
             open=self.open,
@@ -57,6 +82,13 @@ class KlineUpdate:
             source_transport=self.raw_source,
             source_kind=self.source_kind,
             is_closed=self.is_closed,
+            provider=self.exchange.lower(),
+            provider_revision=provider_revision,
+            open_text=self.open_text,
+            high_text=self.high_text,
+            low_text=self.low_text,
+            close_text=self.close_text,
+            volume_text=self.volume_text,
             downloaded_at=(
                 downloaded_at if downloaded_at is not None else self.received_at
             ),
@@ -95,6 +127,11 @@ def normalize_binance_kline(
         raw_source="ws",
         raw_event_id=str(payload.get("e", "kline")) + ":" + str(payload.get("E", "")),
         received_at=received_at,
+        open_text=str(k["o"]),
+        high_text=str(k["h"]),
+        low_text=str(k["l"]),
+        close_text=str(k["c"]),
+        volume_text=str(k["v"]),
     )
 
 
@@ -137,6 +174,11 @@ def normalize_bybit_kline(
                 raw_source="ws",
                 raw_event_id=topic + ":" + str(payload.get("ts", "")),
                 received_at=received_at,
+                open_text=str(item["open"]),
+                high_text=str(item["high"]),
+                low_text=str(item["low"]),
+                close_text=str(item["close"]),
+                volume_text=str(item["volume"]),
             )
         )
     return out

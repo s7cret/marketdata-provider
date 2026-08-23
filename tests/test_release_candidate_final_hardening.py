@@ -64,6 +64,8 @@ def _mb(
         source_kind="trade_kline",
         is_closed=closed,
         downloaded_at=time + 60_000,
+        provider="binance",
+        provider_revision="test-fixture-v1",
     )
 
 
@@ -282,7 +284,7 @@ def test_timeframe_symbols_and_small_utility_branches(
     assert _python_files(Path("missing")) == []
     assert duplicate_report(Path("missing")).duplicate_group_count == 0
     assert architecture_report(Path("missing")).oversized_count == 0
-    assert release_report(Path.cwd()).package_version == "5.0.0rc3"
+    assert release_report(Path.cwd()).package_version == "5.0.0rc4"
 
 
 class FakeResponse:
@@ -928,6 +930,10 @@ def test_segment_store_parquet_seek_and_service_helper_edges(
                         "source_kind": "trade_kline",
                         "source": "",
                         "is_closed": True,
+                        "provider": "binance",
+                        "provider_revision": "test-fixture-v1",
+                        "revision_state": "ORIGINAL",
+                        "revision": 0,
                         "quote_volume": None,
                         "turnover": None,
                         "trades_count": None,

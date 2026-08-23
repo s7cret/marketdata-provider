@@ -33,6 +33,8 @@ def mb(
         source_kind="trade_kline",
         is_closed=closed,
         downloaded_at=t + 60_000,
+        provider="binance",
+        provider_revision="test-fixture-v1",
     )
 
 

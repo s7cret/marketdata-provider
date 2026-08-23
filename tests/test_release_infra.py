@@ -22,7 +22,7 @@ from marketdata_provider.transport.async_client import RetryConfig
 
 
 def test_release_manifest_and_distribution_are_green(tmp_path: Path, capsys) -> None:
-    assert __version__ == "5.0.0rc3"
+    assert __version__ == "5.0.0rc4"
     report = release_report(Path.cwd())
     assert report.ok, report
     assert distribution_manifest(Path.cwd()).forbidden_count == 0
@@ -40,11 +40,11 @@ def test_release_manifest_and_distribution_are_green(tmp_path: Path, capsys) -> 
 
 
 def test_distribution_zip_builder_and_hygiene(tmp_path: Path) -> None:
-    output = tmp_path / "marketdata-provider-5.0.0rc3.zip"
-    build_zip(Path.cwd(), output, archive_root="marketdata-provider-5.0.0rc3")
+    output = tmp_path / "marketdata-provider-5.0.0rc4.zip"
+    build_zip(Path.cwd(), output, archive_root="marketdata-provider-5.0.0rc4")
     with zipfile.ZipFile(output) as zf:
         names = zf.namelist()
-    assert "marketdata-provider-5.0.0rc3/pyproject.toml" in names
+    assert "marketdata-provider-5.0.0rc4/pyproject.toml" in names
     assert not any("__pycache__" in name or name.endswith(".pyc") for name in names)
 
 

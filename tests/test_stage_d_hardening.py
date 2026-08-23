@@ -34,6 +34,8 @@ def mb(t: int, close: float = 1.5) -> MarketBar:
         source_kind="trade_kline",
         is_closed=True,
         downloaded_at=t + 60_000,
+        provider="binance",
+        provider_revision="test-fixture-v1",
     )
 
 
@@ -89,7 +91,12 @@ def test_segment_store_parses_typed_bool_and_exposes_latest_time(tmp_path: Path)
         "low": 0.5,
         "close": 1.5,
         "volume": 10,
+        "time_close": 59_999,
         "is_closed": True,
+        "provider": "binance",
+        "provider_revision": "fixture-v1",
+        "revision_state": "ORIGINAL",
+        "revision": 0,
     }
 
     assert store._row_to_bar(row).is_closed is True

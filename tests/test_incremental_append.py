@@ -47,6 +47,8 @@ def bar(t: int, *, close: float = 1.5) -> MarketBar:
         source_kind="trade_kline",
         is_closed=True,
         downloaded_at=t + 60_000,
+        provider="binance",
+        provider_revision="test-fixture-v1",
     )
 
 
@@ -308,7 +310,7 @@ def test_legacy_manifest_is_validated_once_then_migrated_without_rewrite(
     assert data_path.stat().st_ino == inode
     assert first.rows_count == 3
     assert second.rows_count == 4
-    assert second.checksum_algorithm == "sha256-tail-chain-v3"
+    assert second.checksum_algorithm == "sha256-tail-chain-v4"
     assert second.base_checksum == bars_checksum([bar(0), bar(60_000)])
     assert second.base_rows_count == legacy.rows_count
     assert [item.time for item in store.read_all(**KEY)] == [

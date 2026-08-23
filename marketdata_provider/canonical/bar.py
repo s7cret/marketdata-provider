@@ -23,6 +23,8 @@ from marketdata_provider.timeframes import (
 )
 
 _SCHEMA_ID = "openpine.marketdata.v2"
+CanonicalBarV2 = dict[str, Any]
+DataSnapshotV2 = dict[str, Any]
 _SUPPORTED_TIMEFRAMES = frozenset(
     {
         "1s",
@@ -213,7 +215,7 @@ def make_canonical_bar(
     volume: object,
     snapshot_id: str,
     provider: str,
-    provider_revision: str | None = None,
+    provider_revision: str,
     finality: Finality | str | None = None,
     revision_state: RevisionState | str = RevisionState.ORIGINAL,
     revision: int = 0,
@@ -413,7 +415,7 @@ def build_data_snapshot(
     snapshot_id: str,
     instrument_id: str,
     timeframe: str,
-    provider_revision: str | None = None,
+    provider_revision: str,
     start_utc_ms: int,
     end_utc_ms: int,
     bars: Iterable[Mapping[str, Any]],
@@ -441,8 +443,8 @@ def build_data_snapshot(
             raise MDValidationError("bar instrument_id does not match snapshot")
         if bar["timeframe"] != canonical_tf:
             raise MDValidationError("bar timeframe does not match snapshot")
-        if bar["provider_revision"] != expected_provider_revision:
-            raise MDValidationError("bar provider_revision does not match snapshot")
+        if bar["snapshot_id"] != snapshot_instance_id:
+            raise MDValidationError("bar snapshot_id does not match snapshot")
         open_time = int(bar["open_time_utc_ms"])
         close_time = int(bar["close_time_utc_ms"])
         if open_time < start_ms or close_time >= end_ms:
@@ -523,7 +525,7 @@ def canonical_bars_from_binance_klines(
     instrument_id: str,
     timeframe: str,
     provider: str,
-    provider_revision: str | None = None,
+    provider_revision: str,
     snapshot_id: str,
     server_time_ms: int | None,
     include_open: bool = False,

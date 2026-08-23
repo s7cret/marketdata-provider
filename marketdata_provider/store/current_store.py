@@ -6,6 +6,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from openpine_contracts import RevisionState
+
 from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.timeframes import canonical_timeframe
 
@@ -53,9 +55,37 @@ class CurrentStore:
                 "CREATE TABLE IF NOT EXISTS current_candles ("
                 "exchange TEXT NOT NULL, market TEXT NOT NULL, symbol TEXT NOT NULL, source_transport TEXT NOT NULL, source_kind TEXT NOT NULL, timeframe TEXT NOT NULL, "
                 "open_time INTEGER NOT NULL, close_time INTEGER NOT NULL, open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL, close REAL NOT NULL, volume REAL NOT NULL, "
-                "quote_volume REAL, turnover REAL, trades_count INTEGER, taker_buy_base_volume REAL, taker_buy_quote_volume REAL, is_closed INTEGER NOT NULL DEFAULT 0, event_time INTEGER, received_at INTEGER NOT NULL, raw_event_id TEXT, "
+                "quote_volume REAL, turnover REAL, trades_count INTEGER, taker_buy_base_volume REAL, taker_buy_quote_volume REAL, is_closed INTEGER NOT NULL DEFAULT 0, provider TEXT NOT NULL, provider_revision TEXT NOT NULL, revision_state TEXT NOT NULL, revision INTEGER NOT NULL, open_text TEXT, high_text TEXT, low_text TEXT, close_text TEXT, volume_text TEXT, event_time INTEGER, received_at INTEGER NOT NULL, raw_event_id TEXT, "
                 "PRIMARY KEY(exchange, market, symbol, source_transport, source_kind, timeframe, open_time))"
             )
+            columns = {
+                str(row[1]) for row in db.execute("PRAGMA table_info(current_candles)")
+            }
+            for name, statement in (
+                ("provider", "ALTER TABLE current_candles ADD COLUMN provider TEXT"),
+                (
+                    "provider_revision",
+                    "ALTER TABLE current_candles ADD COLUMN provider_revision TEXT",
+                ),
+                (
+                    "revision_state",
+                    "ALTER TABLE current_candles ADD COLUMN revision_state TEXT",
+                ),
+                ("revision", "ALTER TABLE current_candles ADD COLUMN revision INTEGER"),
+                ("open_text", "ALTER TABLE current_candles ADD COLUMN open_text TEXT"),
+                ("high_text", "ALTER TABLE current_candles ADD COLUMN high_text TEXT"),
+                ("low_text", "ALTER TABLE current_candles ADD COLUMN low_text TEXT"),
+                (
+                    "close_text",
+                    "ALTER TABLE current_candles ADD COLUMN close_text TEXT",
+                ),
+                (
+                    "volume_text",
+                    "ALTER TABLE current_candles ADD COLUMN volume_text TEXT",
+                ),
+            ):
+                if name not in columns:
+                    db.execute(statement)
             db.execute(
                 "CREATE TABLE IF NOT EXISTS stream_checkpoints ("
                 "exchange TEXT NOT NULL, market TEXT NOT NULL, symbol TEXT NOT NULL, source_transport TEXT NOT NULL, source_kind TEXT NOT NULL, timeframe TEXT NOT NULL, "
@@ -73,12 +103,18 @@ class CurrentStore:
     ) -> None:
         if bar.is_closed is None:
             raise ValueError("is_closed is required for current candle storage")
+        if bar.time_close is None:
+            raise ValueError(
+                "explicit close time is required for current candle storage"
+            )
+        if not bar.provider or not bar.provider_revision:
+            raise ValueError("provider and provider_revision are required")
         with self._connect() as db:
             db.execute(
-                "INSERT INTO current_candles(exchange,market,symbol,source_transport,source_kind,timeframe,open_time,close_time,open,high,low,close,volume,quote_volume,turnover,trades_count,taker_buy_base_volume,taker_buy_quote_volume,is_closed,event_time,received_at,raw_event_id) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
+                "INSERT INTO current_candles(exchange,market,symbol,source_transport,source_kind,timeframe,open_time,close_time,open,high,low,close,volume,quote_volume,turnover,trades_count,taker_buy_base_volume,taker_buy_quote_volume,is_closed,provider,provider_revision,revision_state,revision,open_text,high_text,low_text,close_text,volume_text,event_time,received_at,raw_event_id) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) "
                 "ON CONFLICT(exchange,market,symbol,source_transport,source_kind,timeframe,open_time) DO UPDATE SET "
-                "close_time=excluded.close_time, open=excluded.open, high=excluded.high, low=excluded.low, close=excluded.close, volume=excluded.volume, quote_volume=excluded.quote_volume, turnover=excluded.turnover, trades_count=excluded.trades_count, taker_buy_base_volume=excluded.taker_buy_base_volume, taker_buy_quote_volume=excluded.taker_buy_quote_volume, is_closed=excluded.is_closed, event_time=excluded.event_time, received_at=excluded.received_at, raw_event_id=excluded.raw_event_id",
+                "close_time=excluded.close_time, open=excluded.open, high=excluded.high, low=excluded.low, close=excluded.close, volume=excluded.volume, quote_volume=excluded.quote_volume, turnover=excluded.turnover, trades_count=excluded.trades_count, taker_buy_base_volume=excluded.taker_buy_base_volume, taker_buy_quote_volume=excluded.taker_buy_quote_volume, is_closed=excluded.is_closed, provider=excluded.provider, provider_revision=excluded.provider_revision, revision_state=excluded.revision_state, revision=excluded.revision, open_text=excluded.open_text, high_text=excluded.high_text, low_text=excluded.low_text, close_text=excluded.close_text, volume_text=excluded.volume_text, event_time=excluded.event_time, received_at=excluded.received_at, raw_event_id=excluded.raw_event_id",
                 (
                     bar.exchange.lower(),
                     bar.market.lower(),
@@ -87,7 +123,7 @@ class CurrentStore:
                     bar.source_kind,
                     canonical_timeframe(bar.timeframe),
                     bar.time,
-                    bar.time_close or bar.time,
+                    bar.time_close,
                     bar.open,
                     bar.high,
                     bar.low,
@@ -99,6 +135,15 @@ class CurrentStore:
                     bar.taker_buy_base_volume,
                     bar.taker_buy_quote_volume,
                     int(bar.is_closed),
+                    bar.provider,
+                    bar.provider_revision,
+                    bar.revision_state.value,
+                    bar.revision,
+                    bar.open_text,
+                    bar.high_text,
+                    bar.low_text,
+                    bar.close_text,
+                    bar.volume_text,
                     event_time,
                     received_at or bar.downloaded_at or 0,
                     raw_event_id,
@@ -199,6 +244,18 @@ class CurrentStore:
             ]
 
     def _row_to_bar(self, row: sqlite3.Row) -> MarketBar:
+        provider = row["provider"]
+        provider_revision = row["provider_revision"]
+        revision_state = row["revision_state"]
+        revision = row["revision"]
+        if not provider or not provider_revision:
+            raise ValueError(
+                "current candle lacks provider identity; migration required"
+            )
+        if revision_state is None or revision is None:
+            raise ValueError(
+                "current candle lacks revision identity; migration required"
+            )
         return MarketBar(
             time=int(row["open_time"]),
             open=float(row["open"]),
@@ -214,6 +271,15 @@ class CurrentStore:
             source_transport=row["source_transport"],
             source_kind=row["source_kind"],
             is_closed=bool(row["is_closed"]),
+            provider=str(provider),
+            provider_revision=str(provider_revision),
+            revision_state=RevisionState(str(revision_state)),
+            revision=int(revision),
+            open_text=row["open_text"],
+            high_text=row["high_text"],
+            low_text=row["low_text"],
+            close_text=row["close_text"],
+            volume_text=row["volume_text"],
             quote_volume=row["quote_volume"],
             turnover=row["turnover"],
             trades_count=row["trades_count"],

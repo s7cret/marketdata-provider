@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
+from openpine_contracts import Finality
 
 from marketdata_provider import LiveKlineEvent as TopLevelLiveKlineEvent
 from marketdata_provider import (
@@ -11,17 +12,15 @@ from marketdata_provider import (
     create_live_kline_client,
     create_provider,
 )
+from marketdata_provider.canonical.provider import ProviderRawBar, build_public_snapshot
 from marketdata_provider.config import (
     MarketDataConfig,
     OfflineDataConfig,
     StorageConfig,
 )
 from marketdata_provider.contracts import (
-    Bar,
     BarQuery,
-    BarSeries,
     CandleStore,
-    CoverageReport,
     CoverageValidationError,
     InstrumentKey,
     LiveKlineClient,
@@ -60,50 +59,37 @@ def test_create_candle_store_returns_contract_protocol_and_preserves_window(
         end_ms=180_000,
         source="storage",
     )
-    bars = (
-        Bar(
-            query.instrument, query.timeframe, 0, 59_999, 1.0, 1.0, 1.0, 1.0, 1.0, True
-        ),
-        Bar(
-            query.instrument,
-            query.timeframe,
-            60_000,
-            119_999,
-            2.0,
-            2.0,
-            2.0,
-            2.0,
-            2.0,
-            True,
-        ),
-        Bar(
-            query.instrument,
-            query.timeframe,
-            120_000,
-            179_999,
-            3.0,
-            3.0,
-            3.0,
-            3.0,
-            3.0,
-            True,
-        ),
+    raw_bars = [
+        ProviderRawBar(
+            instrument_id=write_query.instrument.serialize(),
+            timeframe="1m",
+            open_time_utc_ms=time,
+            close_time_utc_ms=time + 59_999,
+            open=value,
+            high=value,
+            low=value,
+            close=value,
+            volume=value,
+            finality=Finality.FINAL,
+            provider="binance",
+            provider_revision="fixture-v1",
+        )
+        for time, value in ((0, "1"), (60_000, "2"), (120_000, "3"))
+    ]
+    snapshot = build_public_snapshot(
+        write_query, raw_bars, provider_revision="fixture-v1"
     )
 
-    result = store.write(
-        BarSeries(
-            query=write_query,
-            bars=bars,
-            coverage=CoverageReport(0, 180_000, 0, 180_000, source_mix=("test",)),
-        )
-    )
-    series = store.read(query)
+    result = store.write(snapshot)
+    restored = store.read(query)
 
     assert result.success
     assert result.rows_written == 3
-    assert [bar.time for bar in series.bars] == [60_000]
-    assert series.coverage.is_complete
-    assert series.coverage.delivered_end_ms == 120_000
+    assert [bar["open_time_utc_ms"] for bar in restored["bars"]] == [60_000]
+    assert restored["coverage"]["complete"] is True
+    assert restored["coverage"]["covered_end_utc_ms"] == 120_000
+    assert store.coverage(query)["complete"] is True
+    assert store.latest_bar_time(query) == 120_000
 
 
 def test_candle_store_write_rejects_mixed_series_before_persisting(
@@ -113,34 +99,36 @@ def test_candle_store_write_rejects_mixed_series_before_persisting(
         MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))
     )
     query = _query()
-    mixed_bar = Bar(
-        InstrumentKey("bybit", "linear", "ETHUSDT"),
-        query.timeframe,
-        60_000,
-        119_999,
-        2.0,
-        2.0,
-        2.0,
-        2.0,
-        2.0,
-        True,
+    valid = build_public_snapshot(
+        query,
+        [
+            ProviderRawBar(
+                instrument_id=query.instrument.serialize(),
+                timeframe="1m",
+                open_time_utc_ms=60_000,
+                close_time_utc_ms=119_999,
+                open="2",
+                high="2",
+                low="2",
+                close="2",
+                volume="2",
+                finality=Finality.FINAL,
+                provider="binance",
+                provider_revision="fixture-v1",
+            )
+        ],
+        provider_revision="fixture-v1",
     )
+    tampered = dict(valid)
+    tampered["bars"] = [dict(valid["bars"][0], instrument_id="bybit/linear/ETHUSDT")]
 
-    result = store.write(
-        BarSeries(
-            query=query,
-            bars=(mixed_bar,),
-            coverage=CoverageReport(
-                60_000, 120_000, 60_000, 120_000, source_mix=("test",)
-            ),
-        )
-    )
+    result = store.write(tampered)
 
     assert not result.success
     assert result.rows_written == 0
     assert result.error is not None
-    assert "instrument does not match" in result.error
-    assert store.read(query).bars == ()
+    assert "bar_content_hash verification failed" in result.error
+    assert store.read(query)["bars"] == []
 
 
 @pytest.mark.parametrize(
@@ -183,6 +171,8 @@ def test_candle_store_read_rejects_rows_with_mismatched_embedded_identity(
         source_transport="ws",
         source_kind="trade_kline",
         is_closed=True,
+        provider=stored_exchange,
+        provider_revision="test-fixture-v1",
     )
     store.store.segments.replace_all(  # type: ignore[attr-defined]
         [corrupt_bar],
@@ -201,18 +191,18 @@ def test_create_provider_can_wrap_offline_data_as_canonical_protocol(
 ) -> None:
     source = tmp_path / "bars.csv"
     source.write_text(
-        "time,open,high,low,close,volume,time_close\n"
-        "0,1,1,1,1,1,59999\n"
-        "60000,2,2,2,2,2,119999\n"
-        "120000,3,3,3,3,3,179999\n"
+        "time,open,high,low,close,volume,time_close,finality,provider,provider_revision,revision_state,revision\n"
+        "0,1,1,1,1,1,59999,FINAL,offline,fixture-v1,ORIGINAL,0\n"
+        "60000,2,2,2,2,2,119999,FINAL,offline,fixture-v1,ORIGINAL,0\n"
+        "120000,3,3,3,3,3,179999,FINAL,offline,fixture-v1,ORIGINAL,0\n"
     )
     provider = create_provider(MarketDataConfig(offline=OfflineDataConfig(root=source)))
     assert isinstance(provider, MarketDataProvider)
 
-    series = provider.fetch_bars(_query())
+    snapshot = provider.fetch_bars(_query())
 
-    assert [bar.time for bar in series.bars] == [60_000]
-    assert series.coverage.is_complete
+    assert [bar["open_time_utc_ms"] for bar in snapshot["bars"]] == [60_000]
+    assert snapshot["coverage"]["complete"] is True
 
 
 def test_create_live_kline_client_returns_contract_protocol() -> None:
@@ -254,7 +244,7 @@ async def test_create_live_kline_client_yields_canonical_events(
                     0.5,
                     1.5,
                     10.0,
-                    is_closed=True,
+                    is_closed=False,
                     received_at=456,
                 ),
                 raw_payload={"stream": "test"},
@@ -273,9 +263,12 @@ async def test_create_live_kline_client_yields_canonical_events(
 
     assert len(events) == 1
     assert isinstance(events[0], LiveKlineEvent)
-    assert events[0].bar.instrument == InstrumentKey("binance", "spot", "BTCUSDT")
-    assert events[0].bar.timeframe == parse_timeframe("1m")
-    assert events[0].bar.closed is True
+    assert events[0].bar["instrument_id"] == "binance/spot/BTCUSDT"
+    assert events[0].bar["timeframe"] == "1m"
+    assert events[0].bar["finality"] is Finality.OPEN
+    assert events[0].bar["close"] == "1.5"
+    assert events[0].bar["snapshot_id"]
+    assert events[0].bar["bar_content_hash"]
     assert events[0].event_time == 123
     assert events[0].received_at == 456
     assert events[0].raw_payload == {"stream": "test"}

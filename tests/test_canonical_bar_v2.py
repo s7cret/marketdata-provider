@@ -120,8 +120,13 @@ def test_open_bar_survives_snapshot_and_is_not_in_closed_only() -> None:
 
 
 def test_corrected_bar_changes_snapshot_hash() -> None:
-    original = _bar()
-    corrected = _bar(revision_state=RevisionState.CORRECTED, revision=1, close="1.6")
+    original = _bar(snapshot_id="s1")
+    corrected = _bar(
+        snapshot_id="s2",
+        revision_state=RevisionState.CORRECTED,
+        revision=1,
+        close="1.6",
+    )
     first = build_data_snapshot(
         snapshot_id="s1",
         instrument_id="binance:spot:BTCUSDT",
@@ -144,9 +149,9 @@ def test_corrected_bar_changes_snapshot_hash() -> None:
     assert corrected["revision_state"] is RevisionState.CORRECTED
 
 
-def test_contracts_dependency_is_exact_publishable_rc3() -> None:
+def test_contracts_dependency_is_exact_publishable_rc4() -> None:
     text = Path("pyproject.toml").read_text(encoding="utf-8")
-    assert '"openpine-contracts==5.0.0rc3"' in text
+    assert '"openpine-contracts==5.0.0rc4"' in text
     assert "git+" not in text
 
 
@@ -210,7 +215,7 @@ def test_adapter_fail_closed_edges() -> None:
 def test_close_time_from_timeframe_and_revoked_excluded() -> None:
     bar = _bar(close_time_utc_ms=None)
     assert bar["close_time_utc_ms"] == 60999
-    revoked = _bar(revision_state=RevisionState.REVOKED, revision=1)
+    revoked = _bar(snapshot_id="s", revision_state=RevisionState.REVOKED, revision=1)
     snapshot = build_data_snapshot(
         snapshot_id="s",
         instrument_id="binance:spot:BTCUSDT",
@@ -221,7 +226,7 @@ def test_close_time_from_timeframe_and_revoked_excluded() -> None:
         bars=[revoked],
     )
     assert snapshot["bar_count"] == 0
-    orphan = dict(_bar())
+    orphan = dict(_bar(snapshot_id="s"))
     orphan.pop("revision_state", None)
     with pytest.raises(MDValidationError, match="revision_state"):
         build_data_snapshot(

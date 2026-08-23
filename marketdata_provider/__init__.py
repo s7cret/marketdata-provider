@@ -59,7 +59,7 @@ from marketdata_provider.symbols import (
 
 MarketDataProvider = ContractMarketDataProvider
 
-__version__ = "5.0.0rc3"
+__version__ = "5.0.0rc4"
 __all__ = [
     "DEFAULT_STABLE_QUOTE_ASSETS",
     "RUNTIME_CONTRACT_VERSION",

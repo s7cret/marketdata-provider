@@ -30,6 +30,8 @@ def _bar() -> MarketBar:
         source_transport="rest",
         source_kind="trade_kline",
         is_closed=True,
+        provider="binance",
+        provider_revision="test-fixture-v1",
     )
 
 

@@ -391,6 +391,8 @@ def _mb(time: int, close: float = 1.0) -> MarketBar:
         timeframe="1m",
         downloaded_at=1,
         is_closed=True,
+        provider="binance",
+        provider_revision="test-fixture-v1",
     )
 
 
@@ -451,7 +453,12 @@ def test_segment_store_integrity_and_private_helpers(tmp_path: Path) -> None:
                 "low": "0.5",
                 "close": "1.5",
                 "volume": "1",
+                "time_close": "59999",
                 "is_closed": "false",
+                "provider": "binance",
+                "provider_revision": "fixture-v1",
+                "revision_state": "ORIGINAL",
+                "revision": "0",
             }
         ).is_closed
         is False
@@ -675,6 +682,7 @@ def test_cache_raw_store_and_distribution_edges(
 
 
 def test_factory_helper_boundaries(tmp_path: Path) -> None:
+    from marketdata_provider.compat.v4 import create_legacy_candle_store
     from marketdata_provider.config import (
         MarketDataConfig,
         OfflineDataConfig,
@@ -691,7 +699,6 @@ def test_factory_helper_boundaries(tmp_path: Path) -> None:
         _same_candle_payload,
         _series_write_error,
         _stored_bars_read_error,
-        create_candle_store,
         create_provider,
     )
 
@@ -744,6 +751,8 @@ def test_factory_helper_boundaries(tmp_path: Path) -> None:
         symbol="BTCUSDT",
         timeframe="1m",
         is_closed=True,
+        provider="binance",
+        provider_revision="test-fixture-v1",
     )
     assert _same_candle_payload(mbar, mbar)
     assert _can_bulk_write_closed([mbar]) is True
@@ -759,13 +768,14 @@ def test_factory_helper_boundaries(tmp_path: Path) -> None:
 
     csv_path = tmp_path / "offline.csv"
     csv_path.write_text(
-        "time,open,high,low,close,volume,time_close\n0,1,2,0.5,1.5,1,59999\n"
+        "time,open,high,low,close,volume,time_close,finality,provider,provider_revision,revision_state,revision\n"
+        "0,1,2,0.5,1.5,1,59999,FINAL,offline,fixture-v1,ORIGINAL,0\n"
     )
     provider = create_provider(
         MarketDataConfig(offline=OfflineDataConfig(root=csv_path))
     )
-    assert provider.fetch_bars(query).bars[0].close == 1.5
-    store_adapter = create_candle_store(
+    assert provider.fetch_bars(query)["bars"][0]["close"] == "1.5"
+    store_adapter = create_legacy_candle_store(
         MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path / "store"))
     )
     write_result = store_adapter.write(series)
@@ -805,6 +815,8 @@ def test_service_aggregation_and_archive_helpers(tmp_path: Path) -> None:
             symbol="BTCUSDT",
             timeframe="1m",
             is_closed=True,
+            provider="binance",
+            provider_revision="test-fixture-v1",
         ),
         MarketBar(
             time=60_000,
@@ -819,6 +831,8 @@ def test_service_aggregation_and_archive_helpers(tmp_path: Path) -> None:
             symbol="BTCUSDT",
             timeframe="1m",
             is_closed=True,
+            provider="binance",
+            provider_revision="test-fixture-v1",
         ),
         MarketBar(
             time=120_000,
@@ -833,6 +847,8 @@ def test_service_aggregation_and_archive_helpers(tmp_path: Path) -> None:
             symbol="BTCUSDT",
             timeframe="1m",
             is_closed=True,
+            provider="binance",
+            provider_revision="test-fixture-v1",
         ),
     ]
     agg = _aggregate_market_bars(bars, query=q)

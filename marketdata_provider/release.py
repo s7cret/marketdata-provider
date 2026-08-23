@@ -19,7 +19,7 @@ else:
 from marketdata_provider.distribution import distribution_manifest
 from marketdata_provider.quality import architecture_report, duplicate_report
 
-EXPECTED_VERSION = "5.0.0rc3"
+EXPECTED_VERSION = "5.0.0rc4"
 
 
 @dataclass(frozen=True)

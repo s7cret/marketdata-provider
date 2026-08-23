@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from openpine_contracts import RevisionState
+
 from marketdata_provider.core.bar import MarketBar
+from marketdata_provider.errors import MDMissingFinality, MDValidationError
 from marketdata_provider.timeframes import canonical_timeframe
 
 
-def parse_bool(value: object, *, default: bool = True) -> bool:
+def parse_bool(value: object, *, default: bool | None = None) -> bool:
     if value is None or value == "":
+        if default is None:
+            raise MDMissingFinality("persisted bar is missing is_closed/finality")
         return default
     if isinstance(value, bool):
         return value
@@ -32,6 +37,28 @@ def row_to_bar(r: dict[str, object]) -> MarketBar:
         value = r.get(name)
         return int(float(str(value))) if value not in (None, "") else None
 
+    def opt_text(name: str) -> str | None:
+        value = r.get(name)
+        return str(value) if value not in (None, "") else None
+
+    if r.get("time_close") in (None, ""):
+        raise MDValidationError("persisted bar is missing time_close")
+    provider = text("provider")
+    if not provider:
+        raise MDValidationError("persisted bar is missing provider")
+    provider_revision = text("provider_revision")
+    if not provider_revision:
+        raise MDValidationError("persisted bar is missing provider_revision")
+    if r.get("revision_state") in (None, ""):
+        raise MDValidationError("persisted bar is missing revision_state")
+    if r.get("revision") in (None, ""):
+        raise MDValidationError("persisted bar is missing revision")
+    revision_state_raw = text("revision_state")
+    try:
+        revision_state = RevisionState(revision_state_raw)
+    except ValueError as exc:
+        raise MDValidationError("invalid persisted revision_state") from exc
+
     return MarketBar(
         time=int(float(required_number("time"))),
         open=float(required_number("open")),
@@ -51,6 +78,15 @@ def row_to_bar(r: dict[str, object]) -> MarketBar:
         taker_buy_quote_volume=opt_float("taker_buy_quote_volume"),
         source_transport=text("source_transport", "ws"),
         source_kind=text("source_kind", "trade_kline"),
-        is_closed=parse_bool(r.get("is_closed"), default=True),
+        is_closed=parse_bool(r.get("is_closed")),
+        provider=provider,
+        provider_revision=provider_revision,
+        revision_state=revision_state,
+        revision=int(float(text("revision", "0"))),
+        open_text=opt_text("open_text"),
+        high_text=opt_text("high_text"),
+        low_text=opt_text("low_text"),
+        close_text=opt_text("close_text"),
+        volume_text=opt_text("volume_text"),
         downloaded_at=opt_int("downloaded_at"),
     )

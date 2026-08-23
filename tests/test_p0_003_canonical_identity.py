@@ -51,7 +51,10 @@ def snapshot(
         "provider_revision": "binance-rest-v1",
         "start_utc_ms": 0,
         "end_utc_ms": 60_000,
-        "bars": bars,
+        "bars": [
+            dict(bar, snapshot_id=instance_id) if isinstance(bar, dict) else bar
+            for bar in bars
+        ],
         "clock": lambda: 123,
     }
     payload.update(overrides)
@@ -77,8 +80,9 @@ def test_provider_revision_is_required_and_changes_content_identity() -> None:
     assert first["bar_content_hash"] != second["bar_content_hash"]
     with pytest.raises(MDValidationError, match="provider_revision"):
         bar(provider_revision=None)
-    with pytest.raises(MDValidationError, match="provider_revision"):
-        snapshot("snap-a", [second], provider_revision="binance-rest-v1")
+    mixed = snapshot("snap-a", [second], provider_revision="aggregate-v1")
+    assert mixed["query"]["provider_revision"] == "aggregate-v1"
+    assert mixed["bars"][0]["provider_revision"] == "binance-rest-v2"
 
 
 def test_series_hash_is_stable_across_snapshot_ids_and_creation_times() -> None:
@@ -216,7 +220,7 @@ def test_revision_chain_selects_latest_correction_and_applies_revocation() -> No
     )
     selected = snapshot("corrected", [original, corrected])
 
-    assert selected["bars"] == [corrected]
+    assert selected["bars"] == [dict(corrected, snapshot_id="corrected")]
     assert selected["revision_chains"][0]["selected_revision"] == 1
 
     revoked = bar(revision_state=RevisionState.REVOKED, revision=2)
@@ -315,7 +319,7 @@ def test_closed_bar_only_is_default_and_excludes_open_bars() -> None:
     result = snapshot("closed", [final, open_bar], end_utc_ms=120_000)
 
     assert result["query"]["finality_policy"] == "CLOSED_BAR_ONLY"
-    assert result["bars"] == [final]
+    assert result["bars"] == [dict(final, snapshot_id="closed")]
 
 
 def test_canonical_bar_uses_the_shared_close_time_helper() -> None:
@@ -337,12 +341,12 @@ def test_decimal_contract_boundary_rejects_float(field: str) -> None:
         bar(**{field: 1.25})
 
 
-def test_release_identity_and_contract_dependency_are_rc3_publishable() -> None:
+def test_release_identity_and_contract_dependency_are_rc4_publishable() -> None:
     project = Path("pyproject.toml").read_text(encoding="utf-8")
 
-    assert __version__ == EXPECTED_VERSION == "5.0.0rc3"
-    assert 'version = "5.0.0rc3"' in project
-    assert '"openpine-contracts==5.0.0rc3"' in project
+    assert __version__ == EXPECTED_VERSION == "5.0.0rc4"
+    assert 'version = "5.0.0rc4"' in project
+    assert '"openpine-contracts==5.0.0rc4"' in project
     assert "git+" not in project
 
 

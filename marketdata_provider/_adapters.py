@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable
 
+from openpine_contracts.hashing import content_hash
+
 from marketdata_provider.contracts.bar import Bar as ContractBar
 from marketdata_provider.contracts.instrument import InstrumentKey
 from marketdata_provider.contracts.query import BarQuery
@@ -75,6 +77,21 @@ def core_to_contract_bar(
 
 
 def contract_to_market_bar(bar: ContractBar) -> MarketBar:
+    provider_revision = content_hash(
+        {
+            "instrument_id": bar.instrument.serialize(),
+            "timeframe": bar.timeframe.canonical,
+            "time": bar.time,
+            "time_close": bar.time_close,
+            "open": str(bar.open),
+            "high": str(bar.high),
+            "low": str(bar.low),
+            "close": str(bar.close),
+            "volume": str(bar.volume or 0.0),
+            "closed": bar.closed,
+        },
+        schema_id="marketdata-provider.compat-v4-bar.v1",
+    )
     return MarketBar(
         time=bar.time,
         open=bar.open,
@@ -90,6 +107,8 @@ def contract_to_market_bar(bar: ContractBar) -> MarketBar:
         source_transport="api",
         source_kind="trade_kline",
         is_closed=bar.closed,
+        provider=bar.instrument.exchange,
+        provider_revision=provider_revision,
     )
 
 

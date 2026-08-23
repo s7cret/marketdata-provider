@@ -21,6 +21,13 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Check out OpenPine Contracts candidate
+        uses: actions/checkout@v4
+        with:
+          repository: s7cret/openpine-contracts
+          ref: cd1f7c3eb8af9026ca8fa53c614586a48749419d
+          path: openpine-contracts
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -30,6 +37,7 @@ jobs:
       - name: Install live acceptance dependencies
         run: |
           python -m pip install --upgrade pip
+          python -m pip install -e ./openpine-contracts
           python -m pip install -e ".[dev,stream]"
 
       - name: Probe Binance and Bybit REST and WebSocket

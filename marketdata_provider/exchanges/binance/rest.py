@@ -56,6 +56,11 @@ def normalize_binance_klines(
                 timeframe=timeframe,
                 source="fixture",
                 is_closed=closed is Finality.FINAL,
+                open_text=str(r[1]),
+                high_text=str(r[2]),
+                low_text=str(r[3]),
+                close_text=str(r[4]),
+                volume_text=str(r[5]),
                 quote_volume=(
                     float(r[7]) if len(r) > 7 and r[7] not in (None, "") else None
                 ),

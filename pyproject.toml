@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "marketdata-provider"
-version = "5.0.0rc3"
+version = "5.0.0rc4"
 description = "Market data provider for normalized exchange OHLCV and cache workflows"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "httpx>=0.25",
   "typing-extensions>=4.0",
-  "openpine-contracts==5.0.0rc3",
+  "openpine-contracts==5.0.0rc4",
 ]
 license = "MIT"
 

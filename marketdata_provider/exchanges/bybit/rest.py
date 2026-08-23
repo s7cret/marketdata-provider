@@ -54,6 +54,11 @@ def _normalize_row(
                 close_time_ms=close_time, server_time_ms=server_time_ms
             )
             is Finality.FINAL,
+            open_text=str(row[1]),
+            high_text=str(row[2]),
+            low_text=str(row[3]),
+            close_text=str(row[4]),
+            volume_text=str(row[5]),
             quote_volume=(
                 float(row[6]) if len(row) > 6 and row[6] not in (None, "") else None
             ),

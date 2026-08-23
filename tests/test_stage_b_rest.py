@@ -3,6 +3,7 @@ from zipfile import ZipFile
 import httpx
 import pytest
 
+from marketdata_provider.compat.v4 import create_legacy_candle_store
 from marketdata_provider.config import (
     BinanceConfig,
     BybitConfig,
@@ -17,7 +18,6 @@ from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.errors import MDNetworkUnavailable
 from marketdata_provider.exchanges.binance import provider as binance_provider
 from marketdata_provider.exchanges.bybit import provider as bybit_provider
-from marketdata_provider.factories import create_candle_store
 from marketdata_provider.service import MarketDataService
 from marketdata_provider.store.candle_store import CandleStore
 
@@ -61,6 +61,8 @@ def _one_minute_bars(count: int = 30) -> list[MarketBar]:
                 source_transport="rest",
                 source_kind="trade_kline",
                 is_closed=True,
+                provider="binance",
+                provider_revision="test-fixture-v1",
             )
         )
     return bars
@@ -390,7 +392,7 @@ def test_candle_store_write_is_idempotent_across_provider_provenance(tmp_path):
         zf.writestr("BTCUSDT-15m-1970-01.csv", "0,1,2,0.5,1.5,10,899999\n")
 
     series = provider(query)
-    store = create_candle_store(
+    store = create_legacy_candle_store(
         MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))
     )
     result = store.write(series)

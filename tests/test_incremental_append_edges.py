@@ -57,6 +57,8 @@ def bar(t: int) -> MarketBar:
         source_kind="trade_kline",
         is_closed=True,
         downloaded_at=t + 60_000,
+        provider="binance",
+        provider_revision="test-fixture-v1",
     )
 
 

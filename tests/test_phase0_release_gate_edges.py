@@ -39,6 +39,8 @@ def _bar(time: int = 0) -> MarketBar:
         symbol="BTCUSDT",
         timeframe="1m",
         is_closed=True,
+        provider="binance",
+        provider_revision="test-fixture-v1",
     )
 
 

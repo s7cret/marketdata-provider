@@ -25,7 +25,11 @@ from marketdata_provider.contracts import BarQuery, InstrumentKey, parse_timefra
 from marketdata_provider.contracts.bar import Bar as ContractBar
 from marketdata_provider.contracts.footprint import FootprintQuery
 from marketdata_provider.core.bar import Bar, MarketBar
-from marketdata_provider.errors import MDNetworkUnavailable, MDUnsupportedFeature
+from marketdata_provider.errors import (
+    MDMissingFinality,
+    MDNetworkUnavailable,
+    MDUnsupportedFeature,
+)
 
 
 def _bar(time: int = 0, close: float = 1.5) -> Bar:
@@ -56,6 +60,8 @@ def _mb(
         source_kind="trade_kline",
         is_closed=closed,
         downloaded_at=time + 60_000,
+        provider=exchange,
+        provider_revision="test-fixture-v1",
     )
 
 
@@ -781,7 +787,8 @@ def test_final_segment_store_context_and_row_helpers(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="rollback branch"), store._connect_index():
         raise RuntimeError("rollback branch")
 
-    assert store._parse_bool(None) is True
+    with pytest.raises(MDMissingFinality):
+        store._parse_bool(None)
     assert store._parse_bool(True) is True
     assert parse_bool(0) is False
     assert parse_bool(object()) is True
@@ -792,6 +799,11 @@ def test_final_segment_store_context_and_row_helpers(tmp_path: Path) -> None:
         "low": "0.5",
         "close": "1.5",
         "volume": "10",
+        "time_close": "59999",
         "is_closed": "yes",
+        "provider": "binance",
+        "provider_revision": "fixture-v1",
+        "revision_state": "ORIGINAL",
+        "revision": "0",
     }
     assert store._row_to_bar(row).is_closed is True

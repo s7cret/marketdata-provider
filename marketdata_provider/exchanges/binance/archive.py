@@ -3,13 +3,14 @@ from __future__ import annotations
 import csv
 from collections.abc import Iterable
 from datetime import UTC, datetime
+from decimal import Decimal
 from io import TextIOWrapper
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 from zipfile import ZipFile
 
-from marketdata_provider.core.bar import Bar
+from marketdata_provider.core.bar import Bar, MarketBar
 from marketdata_provider.timeframes import timeframe_ms, to_binance_interval
 
 BINANCE_ARCHIVE_BASE_URL = "https://data.binance.vision/data"
@@ -274,7 +275,7 @@ def _load_archive_file(
                     open_time = _normalize_open_time(raw_open_time, duration)
                     if not (start <= open_time < end):
                         continue
-                    bar = Bar(
+                    bar = MarketBar(
                         time=open_time,
                         open=float(row[1]),
                         high=float(row[2]),
@@ -282,6 +283,18 @@ def _load_archive_file(
                         close=float(row[4]),
                         volume=float(row[5]),
                         time_close=open_time + duration - 1,
+                        exchange="binance",
+                        market=market.lower(),
+                        symbol=symbol.upper(),
+                        timeframe=timeframe,
+                        source_transport="archive",
+                        is_closed=True,
+                        provider="binance",
+                        open_text=str(row[1]),
+                        high_text=str(row[2]),
+                        low_text=str(row[3]),
+                        close_text=str(row[4]),
+                        volume_text=str(row[5]),
                     )
                     by_time[open_time] = _merge_same_open_time(
                         by_time.get(open_time), bar
@@ -294,6 +307,36 @@ def _load_archive_file(
 def _merge_same_open_time(current: Bar | None, new: Bar) -> Bar:
     if current is None:
         return new
+    if isinstance(current, MarketBar) and isinstance(new, MarketBar):
+        current_volume = Decimal(current.volume_text or str(current.volume))
+        new_volume = Decimal(new.volume_text or str(new.volume))
+        high_source = max(
+            (current, new), key=lambda bar: Decimal(bar.high_text or str(bar.high))
+        )
+        low_source = min(
+            (current, new), key=lambda bar: Decimal(bar.low_text or str(bar.low))
+        )
+        return MarketBar(
+            time=current.time,
+            open=current.open,
+            high=max(current.high, new.high),
+            low=min(current.low, new.low),
+            close=new.close,
+            volume=float(current_volume + new_volume),
+            time_close=current.time_close,
+            exchange=current.exchange,
+            market=current.market,
+            symbol=current.symbol,
+            timeframe=current.timeframe,
+            source_transport="archive",
+            is_closed=True,
+            provider="binance",
+            open_text=current.open_text,
+            high_text=high_source.high_text,
+            low_text=low_source.low_text,
+            close_text=new.close_text,
+            volume_text=format(current_volume + new_volume, "f"),
+        )
     return Bar(
         time=current.time,
         open=current.open,
