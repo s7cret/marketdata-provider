@@ -12,8 +12,8 @@ from marketdata_provider import (
     create_live_kline_client,
     create_provider,
 )
+from marketdata_provider.canonical.provider import ProviderRawBar
 from marketdata_provider.canonical.provider import (
-    ProviderRawBar,
     build_public_snapshot as _build_public_snapshot,
 )
 from marketdata_provider.config import (

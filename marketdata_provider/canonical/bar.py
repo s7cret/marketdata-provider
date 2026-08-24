@@ -22,10 +22,8 @@ from marketdata_provider.errors import (
     MDTimeframeUnsupported,
     MDValidationError,
 )
-from marketdata_provider.timeframes import (
-    canonical_timeframe,
-    close_time_ms as canonical_close_time_ms,
-)
+from marketdata_provider.timeframes import canonical_timeframe
+from marketdata_provider.timeframes import close_time_ms as canonical_close_time_ms
 
 _BAR_CONTENT_SCHEMA_ID = "openpine.marketdata.bar.v2"
 _SERIES_HASH_SCHEMA_ID = "marketdata-provider.series.v1"

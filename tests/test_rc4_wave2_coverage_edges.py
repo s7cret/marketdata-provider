@@ -39,10 +39,12 @@ from marketdata_provider.exchanges.binance.archive import _merge_same_open_time
 from marketdata_provider.factories import (
     _CandleStoreAdapter,
     _LiveKlineClientAdapter,
-    _OfflineProviderAdapter as _RawOfflineProviderAdapter,
     _snapshot_source_identity,
     _validate_canonical_snapshot,
     create_provider,
+)
+from marketdata_provider.factories import (
+    _OfflineProviderAdapter as _RawOfflineProviderAdapter,
 )
 from marketdata_provider.service import MarketDataService, _aggregate_bucket
 from marketdata_provider.store.candle_store import CandleStore as SegmentCandleStore
