@@ -1,4 +1,5 @@
 from marketdata_provider.config import (
+    ArtifactIdentityConfig,
     BinanceConfig,
     BybitConfig,
     HistoryConfig,
@@ -64,6 +65,7 @@ __all__ = [
     "DEFAULT_STABLE_QUOTE_ASSETS",
     "RUNTIME_CONTRACT_VERSION",
     "AggTrade",
+    "ArtifactIdentityConfig",
     "Bar",
     "BarQuery",
     "BarSeries",

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from openpine_contracts import Finality, RevisionState
+from openpine_contracts.hashing import seal_content_hash
 
 from marketdata_provider.canonical.bar import build_data_snapshot
 from marketdata_provider.canonical.provider import (
@@ -38,7 +39,7 @@ from marketdata_provider.exchanges.binance.archive import _merge_same_open_time
 from marketdata_provider.factories import (
     _CandleStoreAdapter,
     _LiveKlineClientAdapter,
-    _OfflineProviderAdapter,
+    _OfflineProviderAdapter as _RawOfflineProviderAdapter,
     _snapshot_source_identity,
     _validate_canonical_snapshot,
     create_provider,
@@ -56,6 +57,18 @@ from marketdata_provider.store.segment_checksums import (
 )
 from marketdata_provider.store.segment_read import _parquet_checksum
 from marketdata_provider.store.segment_rows import row_to_bar
+
+PRODUCER_COMMIT = "1" * 40
+STACK_ID = "sha256:" + "2" * 64
+PROVIDER_REVISION = {"known": True, "revision": "fixture-v1"}
+
+
+def _OfflineProviderAdapter(path: Path):
+    return _RawOfflineProviderAdapter(
+        path,
+        producer_commit=PRODUCER_COMMIT,
+        stack_id=STACK_ID,
+    )
 
 
 def _query(*, end: int = 60_000) -> BarQuery:
@@ -132,7 +145,13 @@ def test_canonical_provider_fail_closed_edges() -> None:
             provider="binance",
         )
     with pytest.raises(MDValidationError, match="provider_revision"):
-        build_public_snapshot(_query(), [], provider_revision="")
+        build_public_snapshot(
+            _query(),
+            [],
+            provider_revision="",
+            producer_commit=PRODUCER_COMMIT,
+            stack_id=STACK_ID,
+        )
 
 
 def test_source_identity_and_market_bar_validation_edges() -> None:
@@ -186,20 +205,28 @@ def test_factory_offline_and_snapshot_identity_edges(tmp_path: Path) -> None:
         _bar(provider_revision="r2"),
         _bar(time=60_000, time_close=119_999, provider_revision="r1"),
     ]
-    aggregate_a = _snapshot_source_identity(
-        _query(end=120_000), first_order, default_provider="binance"
-    )[1]
-    aggregate_b = _snapshot_source_identity(
-        _query(end=120_000), swapped_order, default_provider="binance"
-    )[1]
-    assert aggregate_a != aggregate_b
+    for mixed in (first_order, swapped_order):
+        with pytest.raises(MDValidationError, match="share one provider_revision"):
+            _snapshot_source_identity(
+                _query(end=120_000), mixed, default_provider="binance"
+            )
+
+    uniform = [
+        _bar(provider_revision="r1"),
+        _bar(time=60_000, time_close=119_999, provider_revision="r1"),
+    ]
     snapshot = snapshot_from_market_bars(
         _query(end=120_000),
-        first_order,
+        uniform,
         provider="binance",
-        provider_revision=aggregate_a,
+        provider_revision={"known": True, "revision": "r1"},
+        producer_commit=PRODUCER_COMMIT,
+        stack_id=STACK_ID,
     )
-    assert [bar["provider_revision"] for bar in snapshot["bars"]] == ["r1", "r2"]
+    assert [bar["provider_revision"] for bar in snapshot["bars"]] == [
+        {"known": True, "revision": "r1"},
+        {"known": True, "revision": "r1"},
+    ]
 
     with pytest.raises(MDUnsupportedFeature, match="Canonical v2 finality"):
         create_provider(MarketDataConfig(default_exchange="okx")).fetch_bars(query)
@@ -446,7 +473,9 @@ def test_snapshot_and_canonical_store_validation_edges(tmp_path: Path) -> None:
                 provider_revision="fixture-v1",
             )
         ],
-        provider_revision="fixture-v1",
+        provider_revision=PROVIDER_REVISION,
+        producer_commit=PRODUCER_COMMIT,
+        stack_id=STACK_ID,
     )
     assert _validate_canonical_snapshot(valid)["series_hash"] == valid["series_hash"]
 
@@ -460,12 +489,16 @@ def test_snapshot_and_canonical_store_validation_edges(tmp_path: Path) -> None:
         _validate_canonical_snapshot(bad_series)
 
     foreign = dict(valid["bars"][0], snapshot_id="foreign")
+    foreign.pop("content_hash")
+    foreign = seal_content_hash(foreign, schema_id="openpine.marketdata.bar.v2")
     with pytest.raises(MDValidationError, match="snapshot_id"):
         build_data_snapshot(
             snapshot_id=str(valid["snapshot_id"]),
             instrument_id=query.instrument.serialize(),
             timeframe="1m",
-            provider_revision="fixture-v1",
+            provider_revision=PROVIDER_REVISION,
+            producer_commit=PRODUCER_COMMIT,
+            stack_id=STACK_ID,
             start_utc_ms=0,
             end_utc_ms=60_000,
             bars=[foreign],
@@ -561,7 +594,11 @@ async def test_live_adapter_rejects_missing_close_and_revision() -> None:
     missing_close = _bar()
     object.__setattr__(missing_close, "time_close", None)
     adapter = _LiveKlineClientAdapter(
-        Raw(missing_close), instrument=_query().instrument, timeframe=_query().timeframe
+        Raw(missing_close),
+        instrument=_query().instrument,
+        timeframe=_query().timeframe,
+        producer_commit=PRODUCER_COMMIT,
+        stack_id=STACK_ID,
     )
     with pytest.raises(MDValidationError, match="close time"):
         _ = [event async for event in adapter.events()]
@@ -571,6 +608,8 @@ async def test_live_adapter_rejects_missing_close_and_revision() -> None:
         Raw(missing_revision),
         instrument=_query().instrument,
         timeframe=_query().timeframe,
+        producer_commit=PRODUCER_COMMIT,
+        stack_id=STACK_ID,
     )
     with pytest.raises(MDValidationError, match="provider_revision"):
         _ = [event async for event in adapter.events()]

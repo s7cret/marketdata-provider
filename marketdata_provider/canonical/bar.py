@@ -1,14 +1,21 @@
 from __future__ import annotations
 
-import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from decimal import Decimal
 from typing import Any, NoReturn, cast
 
-from openpine_contracts import Finality, RevisionState, decimal_string
-from openpine_contracts.hashing import content_hash
+from openpine_contracts import Finality, RevisionState, decimal_string, validate_payload
+from openpine_contracts.hashing import content_hash, verify_content_hash
 from openpine_contracts.money import MoneyError
 
+from marketdata_provider.canonical.envelope import (
+    BAR_SCHEMA_ID,
+    SNAPSHOT_SCHEMA_ID,
+    envelope_metadata,
+    normalize_provider_revision,
+    seal_and_validate,
+    utc_now_ms,
+)
 from marketdata_provider.errors import (
     MDBarConflict,
     MDMissingFinality,
@@ -17,12 +24,11 @@ from marketdata_provider.errors import (
 )
 from marketdata_provider.timeframes import (
     canonical_timeframe,
-)
-from marketdata_provider.timeframes import (
     close_time_ms as canonical_close_time_ms,
 )
 
-_SCHEMA_ID = "openpine.marketdata.v2"
+_BAR_CONTENT_SCHEMA_ID = "openpine.marketdata.bar.v2"
+_SERIES_HASH_SCHEMA_ID = "marketdata-provider.series.v1"
 CanonicalBarV2 = dict[str, Any]
 DataSnapshotV2 = dict[str, Any]
 _SUPPORTED_TIMEFRAMES = frozenset(
@@ -61,6 +67,7 @@ _REQUIRED_BAR_FIELDS = (
     "provider_revision",
     "series_id",
     "bar_content_hash",
+    "superseded_bar_hash",
 )
 
 
@@ -180,8 +187,13 @@ def _canonical_close_time(
     return close_time_utc_ms
 
 
+def _enum_value(value: object) -> object:
+    return value.value if isinstance(value, (Finality, RevisionState)) else value
+
+
 def _bar_identity_payload(bar: Mapping[str, Any]) -> dict[str, Any]:
     return {
+        "series_id": bar["series_id"],
         "instrument_id": bar["instrument_id"],
         "timeframe": bar["timeframe"],
         "open_time_utc_ms": bar["open_time_utc_ms"],
@@ -191,16 +203,33 @@ def _bar_identity_payload(bar: Mapping[str, Any]) -> dict[str, Any]:
         "low": bar["low"],
         "close": bar["close"],
         "volume": bar["volume"],
-        "finality": bar["finality"].value,
-        "revision_state": bar["revision_state"].value,
+        "finality": _enum_value(bar["finality"]),
+        "revision_state": _enum_value(bar["revision_state"]),
         "revision": bar["revision"],
         "provider": bar["provider"],
         "provider_revision": bar["provider_revision"],
+        "superseded_bar_hash": bar["superseded_bar_hash"],
     }
 
 
 def _bar_content_hash(bar: Mapping[str, Any]) -> str:
-    return content_hash(_bar_identity_payload(bar), schema_id=_SCHEMA_ID)
+    return content_hash(_bar_identity_payload(bar), schema_id=_BAR_CONTENT_SCHEMA_ID)
+
+
+def _superseded_hash(value: object, state: RevisionState) -> str | None:
+    if state is RevisionState.ORIGINAL:
+        if value is not None:
+            raise MDValidationError("ORIGINAL superseded_bar_hash must be null")
+        return None
+    if (
+        not isinstance(value, str)
+        or not value.startswith("sha256:")
+        or len(value) != 71
+    ):
+        raise MDValidationError(
+            f"{state.value} superseded_bar_hash must bind the preceding canonical bar"
+        )
+    return value
 
 
 def make_canonical_bar(
@@ -215,21 +244,26 @@ def make_canonical_bar(
     volume: object,
     snapshot_id: str,
     provider: str,
-    provider_revision: str,
+    provider_revision: object,
+    producer_commit: str,
+    stack_id: str,
+    superseded_bar_hash: str | None = None,
     finality: Finality | str | None = None,
     revision_state: RevisionState | str = RevisionState.ORIGINAL,
     revision: int = 0,
     close_time_utc_ms: int | None = None,
+    created_at_utc_ms: int | None = None,
 ) -> dict[str, Any]:
     instrument = _required_text("instrument_id", instrument_id)
     canonical_tf = _canonical_timeframe(timeframe)
     snapshot = _required_text("snapshot_id", snapshot_id)
     source_provider = _required_text("provider", provider)
-    source_provider_revision = _required_text("provider_revision", provider_revision)
+    source_provider_revision = normalize_provider_revision(provider_revision)
     open_ms = _integer_field("open_time_utc_ms", open_time_utc_ms)
     normalized_finality = _normalize_finality(finality)
     normalized_state = _normalize_revision_state(revision_state)
     normalized_revision = _normalize_revision(revision, normalized_state)
+    lineage_hash = _superseded_hash(superseded_bar_hash, normalized_state)
     open_s, high_s, low_s, close_s, volume_s = _validated_prices(
         open=open,
         high=high,
@@ -238,8 +272,15 @@ def make_canonical_bar(
         volume=volume,
     )
     close_ms = _canonical_close_time(canonical_tf, open_ms, close_time_utc_ms)
+    created_at = utc_now_ms() if created_at_utc_ms is None else created_at_utc_ms
 
-    body: dict[str, Any] = {
+    envelope: dict[str, Any] = {
+        "schema_id": BAR_SCHEMA_ID,
+        **envelope_metadata(
+            producer_commit=producer_commit,
+            stack_id=stack_id,
+            created_at_utc_ms=created_at,
+        ),
         "instrument_id": instrument,
         "timeframe": canonical_tf,
         "open_time_utc_ms": open_ms,
@@ -256,9 +297,10 @@ def make_canonical_bar(
         "provider": source_provider,
         "provider_revision": source_provider_revision,
         "series_id": f"{instrument}:{canonical_tf}",
+        "superseded_bar_hash": lineage_hash,
     }
-    body["bar_content_hash"] = _bar_content_hash(body)
-    return body
+    envelope["bar_content_hash"] = _bar_content_hash(envelope)
+    return seal_and_validate(BAR_SCHEMA_ID, envelope)
 
 
 def _normalize_snapshot_bar(bar: Mapping[str, Any]) -> dict[str, Any]:
@@ -268,32 +310,48 @@ def _normalize_snapshot_bar(bar: Mapping[str, Any]) -> dict[str, Any]:
         if field not in bar:
             raise MDValidationError(f"bar missing required field: {field}")
 
-    canonical = make_canonical_bar(
-        instrument_id=bar["instrument_id"],
-        timeframe=bar["timeframe"],
-        open_time_utc_ms=bar["open_time_utc_ms"],
-        close_time_utc_ms=bar["close_time_utc_ms"],
+    normalized = dict(bar)
+    normalized["finality"] = _normalize_finality(bar["finality"])
+    normalized["revision_state"] = _normalize_revision_state(bar["revision_state"])
+    normalized["revision"] = _normalize_revision(
+        bar["revision"], normalized["revision_state"]
+    )
+    normalized["provider_revision"] = normalize_provider_revision(
+        bar["provider_revision"]
+    )
+    normalized["timeframe"] = _canonical_timeframe(bar["timeframe"])
+    normalized["open_time_utc_ms"] = _integer_field(
+        "open_time_utc_ms", bar["open_time_utc_ms"]
+    )
+    normalized["close_time_utc_ms"] = _canonical_close_time(
+        normalized["timeframe"],
+        normalized["open_time_utc_ms"],
+        bar["close_time_utc_ms"],
+    )
+    (
+        normalized["open"],
+        normalized["high"],
+        normalized["low"],
+        normalized["close"],
+        normalized["volume"],
+    ) = _validated_prices(
         open=bar["open"],
         high=bar["high"],
         low=bar["low"],
         close=bar["close"],
         volume=bar["volume"],
-        snapshot_id=bar["snapshot_id"],
-        provider=bar["provider"],
-        provider_revision=bar["provider_revision"],
-        finality=bar["finality"],
-        revision_state=bar["revision_state"],
-        revision=bar["revision"],
     )
-    supplied_hash = bar["bar_content_hash"]
-    if (
-        not isinstance(supplied_hash, str)
-        or supplied_hash != canonical["bar_content_hash"]
-    ):
+    normalized["superseded_bar_hash"] = _superseded_hash(
+        bar["superseded_bar_hash"], normalized["revision_state"]
+    )
+    try:
+        validate_payload(BAR_SCHEMA_ID, normalized)
+    except Exception as exc:
+        raise MDValidationError(f"bar schema validation failed: {exc}") from exc
+    if not verify_content_hash(normalized, schema_id=BAR_SCHEMA_ID):
+        raise MDValidationError("bar content_hash verification failed")
+    if normalized["bar_content_hash"] != _bar_content_hash(normalized):
         raise MDValidationError("bar_content_hash verification failed")
-
-    normalized = dict(bar)
-    normalized.update(canonical)
     return normalized
 
 
@@ -346,8 +404,10 @@ def _resolve_bar_group(
     seen_revisions: dict[int, dict[str, Any]] = {}
     previous_revision: int | None = None
     previous_state: RevisionState | None = None
+    previous_bar: dict[str, Any] | None = None
     for bar in unique:
         revision = int(bar["revision"])
+        state = bar["revision_state"]
         if revision in seen_revisions:
             _raise_bar_conflict(
                 "same revision has different content", open_time, unique
@@ -360,9 +420,23 @@ def _resolve_bar_group(
             _raise_bar_conflict(
                 "revision follows terminal revocation", open_time, unique
             )
+        if previous_bar is None:
+            if state is not RevisionState.ORIGINAL:
+                _raise_bar_conflict(
+                    "revision chain is missing the preceding canonical bar",
+                    open_time,
+                    unique,
+                )
+        elif bar["superseded_bar_hash"] != previous_bar["bar_content_hash"]:
+            _raise_bar_conflict(
+                "superseded_bar_hash does not bind the immediately preceding bar",
+                open_time,
+                unique,
+            )
         seen_revisions[revision] = bar
         previous_revision = revision
-        previous_state = bar["revision_state"]
+        previous_state = state
+        previous_bar = bar
 
     selected = unique[-1]
     revoked = selected["revision_state"] is RevisionState.REVOKED
@@ -406,8 +480,25 @@ def _coverage_metadata(
     return coverage, gaps
 
 
-def _utc_now_ms() -> int:
-    return time.time_ns() // 1_000_000
+def _contract_coverage(
+    bars: Sequence[Mapping[str, Any]], instrument_id: str, timeframe: str
+) -> list[dict[str, Any]]:
+    ranges: list[dict[str, Any]] = []
+    for bar in bars:
+        start = int(bar["open_time_utc_ms"])
+        end = int(bar["close_time_utc_ms"]) + 1
+        if ranges and start <= int(ranges[-1]["end_utc_ms"]):
+            ranges[-1]["end_utc_ms"] = max(int(ranges[-1]["end_utc_ms"]), end)
+        else:
+            ranges.append(
+                {
+                    "instrument_id": instrument_id,
+                    "timeframe": timeframe,
+                    "start_utc_ms": start,
+                    "end_utc_ms": end,
+                }
+            )
+    return ranges
 
 
 def build_data_snapshot(
@@ -415,7 +506,9 @@ def build_data_snapshot(
     snapshot_id: str,
     instrument_id: str,
     timeframe: str,
-    provider_revision: str,
+    provider_revision: object,
+    producer_commit: str,
+    stack_id: str,
     start_utc_ms: int,
     end_utc_ms: int,
     bars: Iterable[Mapping[str, Any]],
@@ -425,7 +518,7 @@ def build_data_snapshot(
     snapshot_instance_id = _required_text("snapshot_id", snapshot_id)
     instrument = _required_text("instrument_id", instrument_id)
     canonical_tf = _canonical_timeframe(timeframe)
-    expected_provider_revision = _required_text("provider_revision", provider_revision)
+    expected_provider_revision = normalize_provider_revision(provider_revision)
     start_ms = _integer_field("start_utc_ms", start_utc_ms)
     end_ms = _integer_field("end_utc_ms", end_utc_ms)
     if end_ms <= start_ms:
@@ -445,6 +538,8 @@ def build_data_snapshot(
             raise MDValidationError("bar timeframe does not match snapshot")
         if bar["snapshot_id"] != snapshot_instance_id:
             raise MDValidationError("bar snapshot_id does not match snapshot")
+        if bar["provider_revision"] != expected_provider_revision:
+            raise MDValidationError("bar provider_revision does not match snapshot")
         open_time = int(bar["open_time_utc_ms"])
         close_time = int(bar["close_time_utc_ms"])
         if open_time < start_ms or close_time >= end_ms:
@@ -486,36 +581,73 @@ def build_data_snapshot(
                 kept.append(selected)
         index = next_index
 
-    query = {
+    contract_query = {
         "instrument_id": instrument,
         "timeframe": canonical_tf,
-        "provider_revision": expected_provider_revision,
         "start_utc_ms": start_ms,
         "end_utc_ms": end_ms,
         "finality_policy": finality_policy,
     }
-    coverage, gaps = _coverage_metadata(kept, start_ms, end_ms)
-    series_identity = {
-        "query": query,
-        "ordered_bar_content_hashes": [bar["bar_content_hash"] for bar in kept],
-        "schema_ids": {
-            "bar": _SCHEMA_ID,
-            "snapshot": _SCHEMA_ID,
-        },
+    compatibility_query = {
+        **contract_query,
+        "provider_revision": expected_provider_revision,
     }
-    created_at = _integer_field("created_at_utc_ms", (clock or _utc_now_ms)())
-    return {
+    coverage_details, gaps = _coverage_metadata(kept, start_ms, end_ms)
+    ordered_hashes = [bar["bar_content_hash"] for bar in kept]
+    series_identity = {
+        "query": contract_query,
+        "provider_revision": expected_provider_revision,
+        "ordered_bar_content_hashes": ordered_hashes,
+    }
+    created_at = _integer_field("created_at_utc_ms", (clock or utc_now_ms)())
+    series_hash = content_hash(series_identity, schema_id=_SERIES_HASH_SCHEMA_ID)
+    body = {
         "snapshot_id": snapshot_instance_id,
-        "query": query,
+        "query": contract_query,
         "bar_count": len(kept),
+        "series_hash": series_hash,
+        "coverage": _contract_coverage(kept, instrument, canonical_tf),
+        "gaps": gaps,
+        "conflicts": [],
+        "provider_revision": expected_provider_revision,
+        "created_at_utc_ms": created_at,
+    }
+    snapshot_envelope = seal_and_validate(
+        SNAPSHOT_SCHEMA_ID,
+        {
+            "schema_id": SNAPSHOT_SCHEMA_ID,
+            **envelope_metadata(
+                producer_commit=producer_commit,
+                stack_id=stack_id,
+                created_at_utc_ms=created_at,
+            ),
+            "kind": "snapshot",
+            "body": body,
+        },
+    )
+    diagnostics = {
+        "coverage": coverage_details,
+        "gaps": gaps,
+        "duplicates": duplicates,
+        "conflicts": [],
+        "revision_chains": revision_chains,
+    }
+    return {
+        "snapshot_envelope": snapshot_envelope,
         "bars": kept,
-        "coverage": coverage,
+        "diagnostics": diagnostics,
+        # Stable bundle conveniences; the contract envelope is always explicit above.
+        "snapshot_id": snapshot_instance_id,
+        "query": compatibility_query,
+        "provider_revision": expected_provider_revision,
+        "bar_count": len(kept),
+        "coverage": coverage_details,
         "gaps": gaps,
         "duplicates": duplicates,
         "conflicts": [],
         "revision_chains": revision_chains,
         "created_at_utc_ms": created_at,
-        "series_hash": content_hash(series_identity, schema_id=_SCHEMA_ID),
+        "series_hash": series_hash,
     }
 
 
@@ -525,7 +657,9 @@ def canonical_bars_from_binance_klines(
     instrument_id: str,
     timeframe: str,
     provider: str,
-    provider_revision: str,
+    provider_revision: object,
+    producer_commit: str,
+    stack_id: str,
     snapshot_id: str,
     server_time_ms: int | None,
     include_open: bool = False,
@@ -554,6 +688,8 @@ def canonical_bars_from_binance_klines(
             snapshot_id=snapshot_id,
             provider=provider,
             provider_revision=provider_revision,
+            producer_commit=producer_commit,
+            stack_id=stack_id,
             finality=bar_finality(
                 close_time_ms=expected_close,
                 server_time_ms=server_time_ms,

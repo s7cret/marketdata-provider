@@ -12,8 +12,12 @@ from marketdata_provider import (
     create_live_kline_client,
     create_provider,
 )
-from marketdata_provider.canonical.provider import ProviderRawBar, build_public_snapshot
+from marketdata_provider.canonical.provider import (
+    ProviderRawBar,
+    build_public_snapshot as _build_public_snapshot,
+)
 from marketdata_provider.config import (
+    ArtifactIdentityConfig,
     MarketDataConfig,
     OfflineDataConfig,
     StorageConfig,
@@ -32,6 +36,32 @@ from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.streaming import KlineUpdate
 from marketdata_provider.streaming.live import LiveKlineEvent as RawLiveKlineEvent
 
+PRODUCER_COMMIT = "1" * 40
+STACK_ID = "sha256:" + "2" * 64
+PROVIDER_REVISION = {"known": True, "revision": "fixture-v1"}
+ARTIFACT_IDENTITY = ArtifactIdentityConfig(
+    producer_commit=PRODUCER_COMMIT,
+    stack_id=STACK_ID,
+)
+
+
+def _config(**kwargs: object) -> MarketDataConfig:
+    return MarketDataConfig(artifact_identity=ARTIFACT_IDENTITY, **kwargs)  # type: ignore[arg-type]
+
+
+def build_public_snapshot(
+    query: BarQuery, bars: list[ProviderRawBar], **kwargs: object
+):
+    revision = kwargs.pop("provider_revision")
+    return _build_public_snapshot(
+        query,
+        bars,
+        provider_revision={"known": True, "revision": str(revision)},
+        producer_commit=PRODUCER_COMMIT,
+        stack_id=STACK_ID,
+        **kwargs,
+    )
+
 
 def _query() -> BarQuery:
     return BarQuery(
@@ -46,9 +76,7 @@ def _query() -> BarQuery:
 def test_create_candle_store_returns_contract_protocol_and_preserves_window(
     tmp_path: Path,
 ) -> None:
-    store = create_candle_store(
-        MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))
-    )
+    store = create_candle_store(_config(storage=StorageConfig(cache_dir=tmp_path)))
     assert isinstance(store, CandleStore)
 
     query = _query()
@@ -95,9 +123,7 @@ def test_create_candle_store_returns_contract_protocol_and_preserves_window(
 def test_candle_store_write_rejects_mixed_series_before_persisting(
     tmp_path: Path,
 ) -> None:
-    store = create_candle_store(
-        MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))
-    )
+    store = create_candle_store(_config(storage=StorageConfig(cache_dir=tmp_path)))
     query = _query()
     valid = build_public_snapshot(
         query,
@@ -127,8 +153,18 @@ def test_candle_store_write_rejects_mixed_series_before_persisting(
     assert not result.success
     assert result.rows_written == 0
     assert result.error is not None
-    assert "bar_content_hash verification failed" in result.error
-    assert store.read(query)["bars"] == []
+    assert "content_hash verification failed" in result.error
+    assert (
+        store.store.get_market_bars(  # type: ignore[attr-defined]
+            exchange=query.instrument.exchange,
+            market=query.instrument.market,
+            symbol=query.instrument.symbol,
+            timeframe=query.timeframe.canonical,
+            start=query.start_ms,
+            end=query.end_ms,
+        )
+        == []
+    )
 
 
 @pytest.mark.parametrize(
@@ -152,9 +188,7 @@ def test_candle_store_read_rejects_rows_with_mismatched_embedded_identity(
     stored_timeframe: str,
     message: str,
 ) -> None:
-    store = create_candle_store(
-        MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))
-    )
+    store = create_candle_store(_config(storage=StorageConfig(cache_dir=tmp_path)))
     query = _query()
     corrupt_bar = MarketBar(
         time=60_000,
@@ -196,7 +230,7 @@ def test_create_provider_can_wrap_offline_data_as_canonical_protocol(
         "60000,2,2,2,2,2,119999,FINAL,offline,fixture-v1,ORIGINAL,0\n"
         "120000,3,3,3,3,3,179999,FINAL,offline,fixture-v1,ORIGINAL,0\n"
     )
-    provider = create_provider(MarketDataConfig(offline=OfflineDataConfig(root=source)))
+    provider = create_provider(_config(offline=OfflineDataConfig(root=source)))
     assert isinstance(provider, MarketDataProvider)
 
     snapshot = provider.fetch_bars(_query())
@@ -207,7 +241,7 @@ def test_create_provider_can_wrap_offline_data_as_canonical_protocol(
 
 def test_create_live_kline_client_returns_contract_protocol() -> None:
     client = create_live_kline_client(
-        MarketDataConfig(),
+        _config(),
         instrument=InstrumentKey("binance", "spot", "BTCUSDT"),
         timeframe=parse_timeframe("1m"),
     )
@@ -259,7 +293,7 @@ async def test_create_live_kline_client_yields_canonical_events(
         "marketdata_provider.streaming.PublicKlineWebSocketClient", FakeRawClient
     )
     client = create_live_kline_client(
-        MarketDataConfig(),
+        _config(),
         instrument=InstrumentKey("binance", "spot", "BTCUSDT"),
         timeframe=parse_timeframe("1m"),
     )

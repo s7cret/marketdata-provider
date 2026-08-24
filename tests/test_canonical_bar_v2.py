@@ -12,6 +12,10 @@ from marketdata_provider.canonical.bar import (
 from marketdata_provider.compat.v4 import finality_from_closed
 from marketdata_provider.errors import MDValidationError
 
+PRODUCER_COMMIT = "1" * 40
+STACK_ID = "sha256:" + "2" * 64
+PROVIDER_REVISION = {"known": True, "revision": "binance-rest-v1"}
+
 
 def _bar(**overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
@@ -28,7 +32,9 @@ def _bar(**overrides: object) -> dict[str, object]:
         "revision_state": RevisionState.ORIGINAL,
         "snapshot_id": "snap-1",
         "provider": "binance",
-        "provider_revision": "binance-rest-v1",
+        "provider_revision": PROVIDER_REVISION,
+        "producer_commit": PRODUCER_COMMIT,
+        "stack_id": STACK_ID,
     }
     payload.update(overrides)
     return make_canonical_bar(**payload)
@@ -65,7 +71,9 @@ def test_missing_finality_is_rejected() -> None:
             volume="10",
             snapshot_id="snap-1",
             provider="binance",
-            provider_revision="binance-rest-v1",
+            provider_revision=PROVIDER_REVISION,
+            producer_commit=PRODUCER_COMMIT,
+            stack_id=STACK_ID,
         )
 
 
@@ -97,7 +105,9 @@ def test_open_bar_survives_snapshot_and_is_not_in_closed_only() -> None:
         snapshot_id="live",
         instrument_id="binance:spot:BTCUSDT",
         timeframe="1m",
-        provider_revision="binance-rest-v1",
+        provider_revision=PROVIDER_REVISION,
+        producer_commit=PRODUCER_COMMIT,
+        stack_id=STACK_ID,
         start_utc_ms=1000,
         end_utc_ms=121000,
         bars=[open_bar, final_bar],
@@ -109,7 +119,9 @@ def test_open_bar_survives_snapshot_and_is_not_in_closed_only() -> None:
         snapshot_id="live",
         instrument_id="binance:spot:BTCUSDT",
         timeframe="1m",
-        provider_revision="binance-rest-v1",
+        provider_revision=PROVIDER_REVISION,
+        producer_commit=PRODUCER_COMMIT,
+        stack_id=STACK_ID,
         start_utc_ms=1000,
         end_utc_ms=121000,
         bars=[open_bar, final_bar],
@@ -121,17 +133,21 @@ def test_open_bar_survives_snapshot_and_is_not_in_closed_only() -> None:
 
 def test_corrected_bar_changes_snapshot_hash() -> None:
     original = _bar(snapshot_id="s1")
+    corrected_source = _bar(snapshot_id="s2")
     corrected = _bar(
         snapshot_id="s2",
         revision_state=RevisionState.CORRECTED,
         revision=1,
         close="1.6",
+        superseded_bar_hash=corrected_source["bar_content_hash"],
     )
     first = build_data_snapshot(
         snapshot_id="s1",
         instrument_id="binance:spot:BTCUSDT",
         timeframe="1m",
-        provider_revision="binance-rest-v1",
+        provider_revision=PROVIDER_REVISION,
+        producer_commit=PRODUCER_COMMIT,
+        stack_id=STACK_ID,
         start_utc_ms=1000,
         end_utc_ms=61000,
         bars=[original],
@@ -140,10 +156,12 @@ def test_corrected_bar_changes_snapshot_hash() -> None:
         snapshot_id="s2",
         instrument_id="binance:spot:BTCUSDT",
         timeframe="1m",
-        provider_revision="binance-rest-v1",
+        provider_revision=PROVIDER_REVISION,
+        producer_commit=PRODUCER_COMMIT,
+        stack_id=STACK_ID,
         start_utc_ms=1000,
         end_utc_ms=61000,
-        bars=[corrected],
+        bars=[corrected_source, corrected],
     )
     assert first["series_hash"] != second["series_hash"]
     assert corrected["revision_state"] is RevisionState.CORRECTED
@@ -168,7 +186,9 @@ def test_adapter_fail_closed_edges() -> None:
             volume="0",
             snapshot_id="s",
             provider="p",
-            provider_revision="test-provider-v1",
+            provider_revision=PROVIDER_REVISION,
+            producer_commit=PRODUCER_COMMIT,
+            stack_id=STACK_ID,
             finality=Finality.FINAL,
         )
     normalized = _bar(finality="FINAL", revision_state="ORIGINAL")  # type: ignore[arg-type]
@@ -186,7 +206,9 @@ def test_adapter_fail_closed_edges() -> None:
             volume="0",
             snapshot_id="s",
             provider="p",
-            provider_revision="test-provider-v1",
+            provider_revision=PROVIDER_REVISION,
+            producer_commit=PRODUCER_COMMIT,
+            stack_id=STACK_ID,
             finality="UNKNOWN",  # type: ignore[arg-type]
         )
     with pytest.raises(MDValidationError, match="revision"):
@@ -204,7 +226,9 @@ def test_adapter_fail_closed_edges() -> None:
             snapshot_id="s",
             instrument_id="i",
             timeframe="1m",
-            provider_revision="binance-rest-v1",
+            provider_revision=PROVIDER_REVISION,
+            producer_commit=PRODUCER_COMMIT,
+            stack_id=STACK_ID,
             start_utc_ms=0,
             end_utc_ms=1,
             bars=[],
@@ -215,15 +239,23 @@ def test_adapter_fail_closed_edges() -> None:
 def test_close_time_from_timeframe_and_revoked_excluded() -> None:
     bar = _bar(close_time_utc_ms=None)
     assert bar["close_time_utc_ms"] == 60999
-    revoked = _bar(snapshot_id="s", revision_state=RevisionState.REVOKED, revision=1)
+    original = _bar(snapshot_id="s")
+    revoked = _bar(
+        snapshot_id="s",
+        revision_state=RevisionState.REVOKED,
+        revision=1,
+        superseded_bar_hash=original["bar_content_hash"],
+    )
     snapshot = build_data_snapshot(
         snapshot_id="s",
         instrument_id="binance:spot:BTCUSDT",
         timeframe="1m",
-        provider_revision="binance-rest-v1",
+        provider_revision=PROVIDER_REVISION,
+        producer_commit=PRODUCER_COMMIT,
+        stack_id=STACK_ID,
         start_utc_ms=0,
         end_utc_ms=70000,
-        bars=[revoked],
+        bars=[original, revoked],
     )
     assert snapshot["bar_count"] == 0
     orphan = dict(_bar(snapshot_id="s"))
@@ -233,7 +265,9 @@ def test_close_time_from_timeframe_and_revoked_excluded() -> None:
             snapshot_id="s",
             instrument_id="binance:spot:BTCUSDT",
             timeframe="1m",
-            provider_revision="binance-rest-v1",
+            provider_revision=PROVIDER_REVISION,
+            producer_commit=PRODUCER_COMMIT,
+            stack_id=STACK_ID,
             start_utc_ms=0,
             end_utc_ms=70000,
             bars=[orphan],
@@ -250,7 +284,9 @@ def test_canonical_klines_keep_decimal_text_and_open_finality() -> None:
         instrument_id="binance:spot:BTCUSDT",
         timeframe="1m",
         provider="binance",
-        provider_revision="binance-rest-v1",
+        provider_revision=PROVIDER_REVISION,
+        producer_commit=PRODUCER_COMMIT,
+        stack_id=STACK_ID,
         snapshot_id="snap",
         server_time_ms=70000,
     )
@@ -263,7 +299,9 @@ def test_canonical_klines_keep_decimal_text_and_open_finality() -> None:
             instrument_id="binance:spot:BTCUSDT",
             timeframe="1m",
             provider="binance",
-            provider_revision="binance-rest-v1",
+            provider_revision=PROVIDER_REVISION,
+            producer_commit=PRODUCER_COMMIT,
+            stack_id=STACK_ID,
             snapshot_id="snap",
             server_time_ms=None,
         )
@@ -273,7 +311,9 @@ def test_canonical_klines_keep_decimal_text_and_open_finality() -> None:
             instrument_id="binance:spot:BTCUSDT",
             timeframe="1m",
             provider="binance",
-            provider_revision="binance-rest-v1",
+            provider_revision=PROVIDER_REVISION,
+            producer_commit=PRODUCER_COMMIT,
+            stack_id=STACK_ID,
             snapshot_id="snap",
             server_time_ms=70_000,
         )

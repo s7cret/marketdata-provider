@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from openpine_contracts import Finality, RevisionState
+from openpine_contracts.hashing import seal_content_hash
 
 import marketdata_provider.canonical.bar as canonical_bar_module
 from marketdata_provider import __version__
@@ -15,6 +16,21 @@ from marketdata_provider.release import EXPECTED_VERSION
 from marketdata_provider.timeframes import close_time_ms
 
 INSTRUMENT = "binance:spot:BTCUSDT"
+PRODUCER_COMMIT = "1" * 40
+STACK_ID = "sha256:" + "2" * 64
+PROVIDER_REVISION = {"known": True, "revision": "binance-rest-v1"}
+
+
+def _bind_snapshot(candidate: dict[str, object], snapshot_id: str) -> dict[str, object]:
+    if candidate.get("snapshot_id") == snapshot_id:
+        return candidate
+    if not isinstance(candidate.get("finality"), (str, Finality)) or not isinstance(
+        candidate.get("revision_state"), (str, RevisionState)
+    ):
+        return candidate
+    rebound = dict(candidate, snapshot_id=snapshot_id)
+    rebound.pop("content_hash", None)
+    return seal_content_hash(rebound, schema_id="openpine.marketdata.bar.v2")
 
 
 def bar(*, snapshot_id: str = "snap-a", **overrides: object) -> dict[str, object]:
@@ -30,13 +46,30 @@ def bar(*, snapshot_id: str = "snap-a", **overrides: object) -> dict[str, object
         "volume": "10",
         "snapshot_id": snapshot_id,
         "provider": "binance",
-        "provider_revision": "binance-rest-v1",
+        "provider_revision": PROVIDER_REVISION,
+        "producer_commit": PRODUCER_COMMIT,
+        "stack_id": STACK_ID,
         "finality": Finality.FINAL,
         "revision_state": RevisionState.ORIGINAL,
         "revision": 0,
     }
     payload.update(overrides)
     return make_canonical_bar(**payload)
+
+
+def successor(
+    previous: dict[str, object],
+    *,
+    revision_state: RevisionState,
+    revision: int,
+    **overrides: object,
+) -> dict[str, object]:
+    return bar(
+        revision_state=revision_state,
+        revision=revision,
+        superseded_bar_hash=previous["bar_content_hash"],
+        **overrides,
+    )
 
 
 def snapshot(
@@ -48,11 +81,13 @@ def snapshot(
         "snapshot_id": instance_id,
         "instrument_id": INSTRUMENT,
         "timeframe": "1m",
-        "provider_revision": "binance-rest-v1",
+        "provider_revision": PROVIDER_REVISION,
+        "producer_commit": PRODUCER_COMMIT,
+        "stack_id": STACK_ID,
         "start_utc_ms": 0,
         "end_utc_ms": 60_000,
         "bars": [
-            dict(bar, snapshot_id=instance_id) if isinstance(bar, dict) else bar
+            _bind_snapshot(bar, instance_id) if isinstance(bar, dict) else bar
             for bar in bars
         ],
         "clock": lambda: 123,
@@ -74,15 +109,14 @@ def test_bar_content_hash_excludes_snapshot_instance_metadata() -> None:
 
 
 def test_provider_revision_is_required_and_changes_content_identity() -> None:
-    first = bar(provider_revision="binance-rest-v1")
-    second = bar(provider_revision="binance-rest-v2")
+    first = bar(provider_revision={"known": True, "revision": "binance-rest-v1"})
+    second = bar(provider_revision={"known": True, "revision": "binance-rest-v2"})
 
     assert first["bar_content_hash"] != second["bar_content_hash"]
     with pytest.raises(MDValidationError, match="provider_revision"):
         bar(provider_revision=None)
-    mixed = snapshot("snap-a", [second], provider_revision="aggregate-v1")
-    assert mixed["query"]["provider_revision"] == "aggregate-v1"
-    assert mixed["bars"][0]["provider_revision"] == "binance-rest-v2"
+    with pytest.raises(MDValidationError, match="provider_revision"):
+        snapshot("snap-a", [second])
 
 
 def test_series_hash_is_stable_across_snapshot_ids_and_creation_times() -> None:
@@ -213,17 +247,18 @@ def test_same_revision_content_conflict_raises_typed_error_with_metadata() -> No
 
 def test_revision_chain_selects_latest_correction_and_applies_revocation() -> None:
     original = bar()
-    corrected = bar(
+    corrected = successor(
+        original,
         close="1.6",
         revision_state=RevisionState.CORRECTED,
         revision=1,
     )
     selected = snapshot("corrected", [original, corrected])
 
-    assert selected["bars"] == [dict(corrected, snapshot_id="corrected")]
+    assert selected["bars"] == [_bind_snapshot(corrected, "corrected")]
     assert selected["revision_chains"][0]["selected_revision"] == 1
 
-    revoked = bar(revision_state=RevisionState.REVOKED, revision=2)
+    revoked = successor(corrected, revision_state=RevisionState.REVOKED, revision=2)
     removed = snapshot("revoked", [original, corrected, revoked])
     assert removed["bar_count"] == 0
     assert removed["revision_chains"][0]["revoked"] is True
@@ -246,19 +281,22 @@ def test_bar_rejects_incoherent_or_boolean_revision(
 
 
 def test_snapshot_rejects_invalid_revision_chain_order() -> None:
-    corrected = bar(
+    original = bar()
+    corrected = successor(
+        original,
         close="1.6",
         revision_state=RevisionState.CORRECTED,
         revision=2,
     )
-    stale = bar(
+    stale = successor(
+        corrected,
         close="1.55",
         revision_state=RevisionState.CORRECTED,
         revision=1,
     )
 
     with pytest.raises(MDValidationError) as exc_info:
-        snapshot("snap-a", [corrected, stale])
+        snapshot("snap-a", [original, corrected, stale])
 
     assert exc_info.value.code == "MD_BAR_CONFLICT"
 
@@ -267,7 +305,7 @@ def test_snapshot_recomputes_and_rejects_tampered_bar_hash() -> None:
     candidate = bar()
     candidate["close"] = "1.6"
 
-    with pytest.raises(MDValidationError, match="bar_content_hash"):
+    with pytest.raises(MDValidationError, match="content_hash"):
         snapshot("snap-a", [candidate])
 
 
@@ -277,7 +315,9 @@ def test_created_at_uses_real_time_by_default_and_supports_injected_clock() -> N
         snapshot_id="real",
         instrument_id=INSTRUMENT,
         timeframe="1m",
-        provider_revision="binance-rest-v1",
+        provider_revision=PROVIDER_REVISION,
+        producer_commit=PRODUCER_COMMIT,
+        stack_id=STACK_ID,
         start_utc_ms=0,
         end_utc_ms=60_000,
         bars=[],
@@ -319,7 +359,7 @@ def test_closed_bar_only_is_default_and_excludes_open_bars() -> None:
     result = snapshot("closed", [final, open_bar], end_utc_ms=120_000)
 
     assert result["query"]["finality_policy"] == "CLOSED_BAR_ONLY"
-    assert result["bars"] == [dict(final, snapshot_id="closed")]
+    assert result["bars"] == [_bind_snapshot(final, "closed")]
 
 
 def test_canonical_bar_uses_the_shared_close_time_helper() -> None:
@@ -376,23 +416,26 @@ def test_canonical_boundary_defensive_type_branches(
 
 
 def test_snapshot_rejects_provider_switch_revocation_tail_and_overlap() -> None:
-    provider_switch = bar(
+    original = bar()
+    provider_switch = successor(
+        original,
         provider="bybit",
         revision_state=RevisionState.CORRECTED,
         revision=1,
         close="1.6",
     )
     with pytest.raises(MDValidationError, match="provider changed"):
-        snapshot("provider-switch", [bar(), provider_switch])
+        snapshot("provider-switch", [original, provider_switch])
 
-    revoked = bar(revision_state=RevisionState.REVOKED, revision=1)
-    after_revoke = bar(
+    revoked = successor(original, revision_state=RevisionState.REVOKED, revision=1)
+    after_revoke = successor(
+        revoked,
         revision_state=RevisionState.CORRECTED,
         revision=2,
         close="1.6",
     )
     with pytest.raises(MDValidationError, match="terminal revocation"):
-        snapshot("revocation-tail", [bar(), revoked, after_revoke])
+        snapshot("revocation-tail", [original, revoked, after_revoke])
 
     overlapping = bar(open_time_utc_ms=30_000, close_time_utc_ms=89_999)
     with pytest.raises(MDValidationError, match="overlap"):

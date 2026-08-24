@@ -84,7 +84,9 @@ def test_public_snapshot_rejects_market_bar_without_exact_decimal_text() -> None
             _query(timeframe="1m", end_ms=60_000),
             [rounded_source],
             provider="binance",
-            provider_revision="raw-r1",
+            provider_revision={"known": True, "revision": "raw-r1"},
+            producer_commit="1" * 40,
+            stack_id="sha256:" + "2" * 64,
         )
 
 

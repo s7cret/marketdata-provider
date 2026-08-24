@@ -16,6 +16,7 @@ from marketdata_provider.canonical.bar import (
     make_canonical_bar,
 )
 from marketdata_provider.config import (
+    ArtifactIdentityConfig,
     HistoryConfig,
     MarketDataConfig,
     OfflineDataConfig,
@@ -32,6 +33,17 @@ from marketdata_provider.errors import MDMissingFinality, MDValidationError
 from marketdata_provider.exchanges.binance.rest import normalize_binance_klines
 from marketdata_provider.store.segment_rows import row_to_bar
 
+PRODUCER_COMMIT = "1" * 40
+STACK_ID = "sha256:" + "2" * 64
+ARTIFACT_IDENTITY = ArtifactIdentityConfig(
+    producer_commit=PRODUCER_COMMIT,
+    stack_id=STACK_ID,
+)
+
+
+def _config(**kwargs: object) -> MarketDataConfig:
+    return MarketDataConfig(artifact_identity=ARTIFACT_IDENTITY, **kwargs)  # type: ignore[arg-type]
+
 
 def _query() -> BarQuery:
     return BarQuery(
@@ -45,7 +57,7 @@ def _query() -> BarQuery:
 
 def _fetch_seeded_public_result(tmp_path: Path) -> object:
     provider = create_provider(
-        MarketDataConfig(
+        _config(
             history=HistoryConfig(enabled=False),
             storage=StorageConfig(cache_dir=tmp_path),
         )
@@ -92,7 +104,7 @@ def test_public_provider_rejects_legacy_row_without_explicit_finality(
         "time,open,high,low,close,volume,time_close\n" "0,1.25,2.5,1,2,3.75,59999\n",
         encoding="utf-8",
     )
-    provider = create_provider(MarketDataConfig(offline=OfflineDataConfig(root=source)))
+    provider = create_provider(_config(offline=OfflineDataConfig(root=source)))
 
     with pytest.raises(MDMissingFinality):
         provider.fetch_bars(_query())
@@ -154,7 +166,10 @@ def test_public_provider_returns_canonical_v2_bar_fields(tmp_path: Path) -> None
     assert bar["finality"] is Finality.FINAL
     assert bar["revision_state"] is RevisionState.ORIGINAL
     assert bar["revision"] == 0
-    assert isinstance(bar["provider_revision"], str) and bar["provider_revision"]
+    assert bar["provider_revision"] == {
+        "known": True,
+        "revision": "fixture-v1",
+    }
     assert isinstance(bar["series_id"], str) and bar["series_id"]
     assert isinstance(bar["bar_content_hash"], str) and bar["bar_content_hash"]
     if isinstance(result, Mapping):
@@ -224,7 +239,7 @@ def test_storage_row_requires_finality_and_preserves_canonical_provenance() -> N
 
 def test_public_closed_bar_policy_excludes_open_storage_rows(tmp_path: Path) -> None:
     provider = create_provider(
-        MarketDataConfig(
+        _config(
             history=HistoryConfig(enabled=False),
             storage=StorageConfig(cache_dir=tmp_path),
         )
@@ -303,7 +318,7 @@ def test_open_binance_rest_bar_survives_service_and_public_boundaries(
         lambda *args, **kwargs: [open_bar],
     )
     provider = create_provider(
-        MarketDataConfig(
+        _config(
             history=HistoryConfig(enabled=False, archive_first=False),
             storage=StorageConfig(cache_dir=tmp_path),
             include_open_candle=True,
@@ -322,7 +337,10 @@ def test_open_binance_rest_bar_survives_service_and_public_boundaries(
     )
     assert current is not None and current.is_closed is False
     assert current.provider_revision == "binance-rest-response-1"
-    assert snapshot["query"]["provider_revision"] == "binance-rest-response-1"
+    assert snapshot["query"]["provider_revision"] == {
+        "known": True,
+        "revision": "binance-rest-response-1",
+    }
     assert snapshot["bar_count"] == 0
 
     closed_bar = MarketBar(
@@ -380,7 +398,7 @@ def test_binance_decimal_text_survives_rest_storage_and_snapshot(
         lambda *args, **kwargs: normalized,
     )
     provider = create_provider(
-        MarketDataConfig(
+        _config(
             history=HistoryConfig(enabled=False, archive_first=False),
             storage=StorageConfig(cache_dir=tmp_path),
         )

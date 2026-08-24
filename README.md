@@ -83,15 +83,30 @@ print(query.instrument.symbol)
 print(query.timeframe.canonical)
 ```
 
-Offline provider setup:
+Offline canonical provider setup (artifact identity must come from the admitted stack manifest; never use placeholders in production):
 
 ```python
-from marketdata_provider import MarketDataConfig, OfflineDataConfig, create_provider
+from marketdata_provider import (
+    ArtifactIdentityConfig,
+    MarketDataConfig,
+    OfflineDataConfig,
+    create_provider,
+)
 
-provider = create_provider(MarketDataConfig(offline=OfflineDataConfig(root="./data")))
-series = provider.get_bars(query)
-print(len(series.bars))
+config = MarketDataConfig(
+    offline=OfflineDataConfig(root="./data/bars.csv"),
+    artifact_identity=ArtifactIdentityConfig(
+        producer_commit=marketdata_commit,  # exact 40-hex Git commit
+        stack_id=stack_manifest_hash,       # sha256:<64 hex>
+    ),
+)
+provider = create_provider(config)
+bundle = provider.fetch_bars(query)
+print(bundle["snapshot_envelope"]["schema_id"])
+print(len(bundle["bars"]))
 ```
+
+Canonical bars and snapshots fail closed if artifact identity, typed provider revision, finality, close time, decimal text, or revision lineage is missing. The returned bundle keeps the schema-valid sealed snapshot in `snapshot_envelope` and the individually sealed `openpine.marketdata.bar.v2` records in `bars`.
 
 ## CLI quick start
 

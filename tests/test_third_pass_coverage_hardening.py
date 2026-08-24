@@ -684,6 +684,7 @@ def test_cache_raw_store_and_distribution_edges(
 def test_factory_helper_boundaries(tmp_path: Path) -> None:
     from marketdata_provider.compat.v4 import create_legacy_candle_store
     from marketdata_provider.config import (
+        ArtifactIdentityConfig,
         MarketDataConfig,
         OfflineDataConfig,
         StorageConfig,
@@ -772,7 +773,13 @@ def test_factory_helper_boundaries(tmp_path: Path) -> None:
         "0,1,2,0.5,1.5,1,59999,FINAL,offline,fixture-v1,ORIGINAL,0\n"
     )
     provider = create_provider(
-        MarketDataConfig(offline=OfflineDataConfig(root=csv_path))
+        MarketDataConfig(
+            offline=OfflineDataConfig(root=csv_path),
+            artifact_identity=ArtifactIdentityConfig(
+                producer_commit="1" * 40,
+                stack_id="sha256:" + "2" * 64,
+            ),
+        )
     )
     assert provider.fetch_bars(query)["bars"][0]["close"] == "1.5"
     store_adapter = create_legacy_candle_store(

@@ -8,7 +8,12 @@ from zipfile import ZipFile
 
 import pytest
 
-from marketdata_provider.config import HistoryConfig, MarketDataConfig, StorageConfig
+from marketdata_provider.config import (
+    ArtifactIdentityConfig,
+    HistoryConfig,
+    MarketDataConfig,
+    StorageConfig,
+)
 from marketdata_provider.contracts.errors import (
     InvalidBarError,
     InvalidBarQueryError,
@@ -584,7 +589,16 @@ def test_factories_store_provider_and_live_adapter(
     monkeypatch.setattr(
         streaming, "PublicKlineWebSocketClient", lambda **kwargs: FakeRawClient()
     )
-    client = create_live_kline_client(MarketDataConfig(), instrument=inst, timeframe=tf)
+    client = create_live_kline_client(
+        MarketDataConfig(
+            artifact_identity=ArtifactIdentityConfig(
+                producer_commit="1" * 40,
+                stack_id="sha256:" + "2" * 64,
+            )
+        ),
+        instrument=inst,
+        timeframe=tf,
+    )
 
     async def collect() -> None:
         async for event in client.events(max_messages=1, timeout_s=1):

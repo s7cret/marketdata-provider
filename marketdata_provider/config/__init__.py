@@ -60,6 +60,14 @@ class SymbolDiscoveryConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class ArtifactIdentityConfig:
+    """Runtime-supplied identity for sealed canonical artifacts."""
+
+    producer_commit: str | None = None
+    stack_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class MarketDataConfig:
     runtime_contract_version: str = RUNTIME_CONTRACT_VERSION
     include_open_candle: bool = False
@@ -72,3 +80,6 @@ class MarketDataConfig:
     storage: StorageConfig = field(default_factory=StorageConfig)
     offline: OfflineDataConfig = field(default_factory=OfflineDataConfig)
     symbols: SymbolDiscoveryConfig = field(default_factory=SymbolDiscoveryConfig)
+    artifact_identity: ArtifactIdentityConfig = field(
+        default_factory=ArtifactIdentityConfig
+    )

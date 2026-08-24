@@ -11,6 +11,7 @@ from marketdata_provider.canonical.bar import (
     build_data_snapshot,
     make_canonical_bar,
 )
+from marketdata_provider.canonical.envelope import normalize_provider_revision
 from marketdata_provider.compat.v4 import finality_from_closed
 from marketdata_provider.contracts.query import BarQuery
 from marketdata_provider.core.bar import MarketBar
@@ -93,48 +94,72 @@ def build_public_snapshot(
     query: BarQuery,
     raw_bars: list[ProviderRawBar],
     *,
-    provider_revision: str,
+    provider_revision: object,
+    producer_commit: str,
+    stack_id: str,
     finality_policy: str = "CLOSED_BAR_ONLY",
 ) -> DataSnapshotV2:
-    if not provider_revision:
-        raise MDValidationError("provider_revision is required")
+    expected_revision = normalize_provider_revision(provider_revision)
     ordered = sorted(raw_bars, key=lambda item: (item.open_time_utc_ms, item.revision))
-    pending_bars = [
-        make_canonical_bar(
-            instrument_id=item.instrument_id,
-            timeframe=item.timeframe,
-            open_time_utc_ms=item.open_time_utc_ms,
-            close_time_utc_ms=item.close_time_utc_ms,
-            open=item.open,
-            high=item.high,
-            low=item.low,
-            close=item.close,
-            volume=item.volume,
-            snapshot_id="pending",
-            provider=item.provider,
-            provider_revision=item.provider_revision,
-            finality=item.finality,
-            revision_state=item.revision_state,
-            revision=item.revision,
-        )
-        for item in ordered
-    ]
+    if any(item.provider_revision != expected_revision["revision"] for item in ordered):
+        raise MDValidationError("raw bar provider_revision does not match snapshot")
+
+    def canonicalize(snapshot_id: str) -> list[dict[str, Any]]:
+        canonical: list[dict[str, Any]] = []
+        previous_open: int | None = None
+        previous_hash: str | None = None
+        for item in ordered:
+            if item.open_time_utc_ms != previous_open:
+                previous_open = item.open_time_utc_ms
+                previous_hash = None
+            bar = make_canonical_bar(
+                instrument_id=item.instrument_id,
+                timeframe=item.timeframe,
+                open_time_utc_ms=item.open_time_utc_ms,
+                close_time_utc_ms=item.close_time_utc_ms,
+                open=item.open,
+                high=item.high,
+                low=item.low,
+                close=item.close,
+                volume=item.volume,
+                snapshot_id=snapshot_id,
+                provider=item.provider,
+                provider_revision=expected_revision,
+                producer_commit=producer_commit,
+                stack_id=stack_id,
+                created_at_utc_ms=query.end_ms,
+                superseded_bar_hash=(
+                    previous_hash
+                    if item.revision_state is not RevisionState.ORIGINAL
+                    else None
+                ),
+                finality=item.finality,
+                revision_state=item.revision_state,
+                revision=item.revision,
+            )
+            canonical.append(bar)
+            previous_hash = str(bar["bar_content_hash"])
+        return canonical
+
+    pending_bars = canonicalize("pending")
     identity: dict[str, Any] = {
         "instrument_id": query.instrument.serialize(),
         "timeframe": query.timeframe.canonical,
         "start_utc_ms": query.start_ms,
         "end_utc_ms": query.end_ms,
-        "provider_revision": provider_revision,
+        "provider_revision": expected_revision,
         "finality_policy": finality_policy,
         "ordered_input_hashes": [bar["bar_content_hash"] for bar in pending_bars],
     }
     snapshot_id = content_hash(identity, schema_id=_SNAPSHOT_ID_SCHEMA)
-    bars = [dict(bar, snapshot_id=snapshot_id) for bar in pending_bars]
+    bars = canonicalize(snapshot_id)
     return build_data_snapshot(
         snapshot_id=snapshot_id,
         instrument_id=query.instrument.serialize(),
         timeframe=query.timeframe.canonical,
-        provider_revision=provider_revision,
+        provider_revision=expected_revision,
+        producer_commit=producer_commit,
+        stack_id=stack_id,
         start_utc_ms=query.start_ms,
         end_utc_ms=query.end_ms,
         bars=bars,
@@ -148,7 +173,9 @@ def snapshot_from_market_bars(
     bars: list[MarketBar],
     *,
     provider: str,
-    provider_revision: str,
+    provider_revision: object,
+    producer_commit: str,
+    stack_id: str,
     finality_policy: str = "CLOSED_BAR_ONLY",
 ) -> DataSnapshotV2:
     raw = [
@@ -164,5 +191,7 @@ def snapshot_from_market_bars(
         query,
         raw,
         provider_revision=provider_revision,
+        producer_commit=producer_commit,
+        stack_id=stack_id,
         finality_policy=finality_policy,
     )
