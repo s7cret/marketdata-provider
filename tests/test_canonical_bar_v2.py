@@ -169,7 +169,7 @@ def test_corrected_bar_changes_snapshot_hash() -> None:
 
 def test_contracts_dependency_is_exact_publishable_rc4() -> None:
     text = Path("pyproject.toml").read_text(encoding="utf-8")
-    assert '"openpine-contracts==5.0.0rc4"' in text
+    assert '"openpine-contracts==5.0.0rc5"' in text
     assert "git+" not in text
 
 

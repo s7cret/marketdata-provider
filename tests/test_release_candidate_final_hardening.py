@@ -284,7 +284,7 @@ def test_timeframe_symbols_and_small_utility_branches(
     assert _python_files(Path("missing")) == []
     assert duplicate_report(Path("missing")).duplicate_group_count == 0
     assert architecture_report(Path("missing")).oversized_count == 0
-    assert release_report(Path.cwd()).package_version == "5.0.0rc4"
+    assert release_report(Path.cwd()).package_version == "5.0.0rc5"
 
 
 class FakeResponse:
