@@ -31,6 +31,10 @@ from marketdata_provider.exchanges.public_spot import (
     public_market_get_bars_sync,
     public_spot_get_bars_sync,
 )
+from marketdata_provider.service_coverage import (
+    coverage_complete as _coverage_complete,
+    include_current_bar as _with_current,
+)
 from marketdata_provider.store.candle_store import CandleStore
 from marketdata_provider.timeframes import close_time_ms
 
@@ -171,11 +175,10 @@ class MarketDataService:
                 return series_from_market_bars(query, bars, source="storage")
             self._ensure_stored(base_query, progress_callback=progress_callback)
             bars = self._stored_bars(base_query)
-            if (
-                bars
-                and query.gap_policy == "fail"
-                and not _coverage_complete(bars, query)
-            ):
+            bars = _with_current(
+                bars, query, self.store, enabled=self.config.include_open_candle
+            )
+            if query.gap_policy == "fail" and not _coverage_complete(bars, query):
                 raise CoverageValidationError(
                     "Stored/provider bars do not cover every requested timestamp"
                 )
@@ -201,6 +204,10 @@ class MarketDataService:
                     "Derived bars do not cover every requested timestamp"
                 )
             return series_from_market_bars(query, derived, source="storage")
+        if query.gap_policy == "fail":
+            raise CoverageValidationError(
+                "Derived bars do not cover every requested timestamp"
+            )
         return series_from_market_bars(query, [], source="storage")
 
     def precompute_bars(self, query: BarQuery) -> BarSeries:
@@ -560,14 +567,6 @@ def _archive_cutoff_ms(config: MarketDataConfig) -> int:
     now = datetime.now(UTC)
     today_start = datetime(now.year, now.month, now.day, tzinfo=UTC)
     return int(today_start.timestamp() * 1000) - days * 86_400_000
-
-
-def _coverage_complete(bars: list[MarketBar], query: BarQuery) -> bool:
-    duration = query.timeframe.duration_ms
-    if duration is None:
-        return bool(bars)
-    present = {bar.time for bar in bars}
-    return all(ts in present for ts in range(query.start_ms, query.end_ms, duration))
 
 
 def _can_derive_from_base(query: BarQuery, base_timeframe: Timeframe) -> bool:
