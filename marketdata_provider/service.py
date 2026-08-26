@@ -169,7 +169,9 @@ class MarketDataService:
         base_query = self._base_query(query)
         if base_query.timeframe == query.timeframe:
             bars = self._stored_bars(base_query)
-            if _coverage_complete(bars, query) or (bars and query.gap_policy != "fail"):
+            if _coverage_complete(bars, query) or (
+                bars and query.gap_policy != "fail" and query.source != "provider"
+            ):
                 return series_from_market_bars(query, bars, source="storage")
             self._ensure_stored(base_query, progress_callback=progress_callback)
             bars = self._stored_bars(base_query)
@@ -184,7 +186,7 @@ class MarketDataService:
 
         derived = self._stored_bars(query)
         if _coverage_complete(derived, query) or (
-            derived and query.gap_policy != "fail"
+            derived and query.gap_policy != "fail" and query.source != "provider"
         ):
             return series_from_market_bars(query, derived, source="storage")
 
