@@ -11,6 +11,7 @@ from marketdata_provider import (
     create_candle_store,
     create_live_kline_client,
     create_provider,
+    next_open_time_ms,
 )
 from marketdata_provider.canonical.provider import ProviderRawBar
 from marketdata_provider.canonical.provider import (
@@ -43,6 +44,11 @@ ARTIFACT_IDENTITY = ArtifactIdentityConfig(
     producer_commit=PRODUCER_COMMIT,
     stack_id=STACK_ID,
 )
+
+
+def test_top_level_exports_calendar_aware_next_open_time() -> None:
+    assert next_open_time_ms(1_704_067_200_000, "1W") == 1_704_672_000_000
+    assert next_open_time_ms(1_704_067_200_000, "1M") == 1_706_745_600_000
 
 
 def _config(**kwargs: object) -> MarketDataConfig:
