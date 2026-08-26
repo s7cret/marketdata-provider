@@ -18,6 +18,7 @@ from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.errors import MDMissingFinality, MDValidationError
 
 _SNAPSHOT_ID_SCHEMA = "marketdata-provider.snapshot-id.v1"
+_SNAPSHOT_REVISION_SCHEMA = "marketdata-provider.snapshot-revision.v1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +91,40 @@ def raw_bar_from_market_bar(
     )
 
 
+def snapshot_revision_identity(
+    provider: str,
+    bars: list[tuple[int, int, str]],
+) -> str:
+    """Return one exact revision for a uniform or incremental snapshot."""
+
+    if not provider:
+        raise MDValidationError("provider is required")
+    if not bars:
+        raise MDValidationError(
+            "provider_revision is unavailable for an empty snapshot"
+        )
+    ordered = sorted(bars, key=lambda item: (item[0], item[1], item[2]))
+    revisions = {provider_revision for _, _, provider_revision in ordered}
+    if "" in revisions:
+        raise MDValidationError("provider_revision is required")
+    if len(revisions) == 1:
+        return next(iter(revisions))
+    return content_hash(
+        {
+            "provider": provider,
+            "bars": [
+                {
+                    "open_time_utc_ms": open_time,
+                    "revision": revision,
+                    "provider_revision": provider_revision,
+                }
+                for open_time, revision, provider_revision in ordered
+            ],
+        },
+        schema_id=_SNAPSHOT_REVISION_SCHEMA,
+    )
+
+
 def build_public_snapshot(
     query: BarQuery,
     raw_bars: list[ProviderRawBar],
@@ -101,8 +136,19 @@ def build_public_snapshot(
 ) -> DataSnapshotV2:
     expected_revision = normalize_provider_revision(provider_revision)
     ordered = sorted(raw_bars, key=lambda item: (item.open_time_utc_ms, item.revision))
-    if any(item.provider_revision != expected_revision["revision"] for item in ordered):
-        raise MDValidationError("raw bar provider_revision does not match snapshot")
+    providers = {item.provider for item in ordered if item.provider}
+    if ordered:
+        if len(providers) != 1:
+            raise MDValidationError("snapshot bars must share one provider")
+        actual_revision = snapshot_revision_identity(
+            next(iter(providers)),
+            [
+                (item.open_time_utc_ms, item.revision, item.provider_revision)
+                for item in ordered
+            ],
+        )
+        if actual_revision != expected_revision["revision"]:
+            raise MDValidationError("raw bar provider_revision does not match snapshot")
 
     def canonicalize(snapshot_id: str) -> list[dict[str, Any]]:
         canonical: list[dict[str, Any]] = []

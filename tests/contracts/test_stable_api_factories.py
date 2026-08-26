@@ -126,6 +126,62 @@ def test_create_candle_store_returns_contract_protocol_and_preserves_window(
     assert store.latest_bar_time(query) == 120_000
 
 
+def test_candle_store_reads_incremental_fetches_with_mixed_revisions(
+    tmp_path: Path,
+) -> None:
+    store = create_candle_store(_config(storage=StorageConfig(cache_dir=tmp_path)))
+    instrument = InstrumentKey("binance", "spot", "BTCUSDT")
+    timeframe = parse_timeframe("1m")
+    for open_time, revision in ((0, "fetch-r1"), (60_000, "fetch-r2")):
+        query = BarQuery(
+            instrument=instrument,
+            timeframe=timeframe,
+            start_ms=open_time,
+            end_ms=open_time + 60_000,
+            source="storage",
+        )
+        snapshot = build_public_snapshot(
+            query,
+            [
+                ProviderRawBar(
+                    instrument_id=instrument.serialize(),
+                    timeframe="1m",
+                    open_time_utc_ms=open_time,
+                    close_time_utc_ms=open_time + 59_999,
+                    open="1",
+                    high="1",
+                    low="1",
+                    close="1",
+                    volume="1",
+                    finality=Finality.FINAL,
+                    provider="binance",
+                    provider_revision=revision,
+                )
+            ],
+            provider_revision=revision,
+        )
+        assert store.write(snapshot).success
+
+    restored = store.read(
+        BarQuery(
+            instrument=instrument,
+            timeframe=timeframe,
+            start_ms=0,
+            end_ms=120_000,
+            source="storage",
+        )
+    )
+
+    snapshot_revision = restored["snapshot_envelope"]["body"]["provider_revision"]
+    assert snapshot_revision["known"] is True
+    assert snapshot_revision["revision"].startswith("sha256:")
+    assert snapshot_revision["revision"] not in {"fetch-r1", "fetch-r2"}
+    assert [bar["provider_revision"] for bar in restored["bars"]] == [
+        snapshot_revision,
+        snapshot_revision,
+    ]
+
+
 def test_candle_store_write_rejects_mixed_series_before_persisting(
     tmp_path: Path,
 ) -> None:

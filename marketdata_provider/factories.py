@@ -21,6 +21,7 @@ from marketdata_provider.canonical.provider import (
     ProviderRawBar,
     build_public_snapshot,
     snapshot_from_market_bars,
+    snapshot_revision_identity,
 )
 from marketdata_provider.canonical.store_adapter import (
     market_bar_from_canonical as _market_bar_from_canonical,
@@ -202,9 +203,12 @@ def _snapshot_source_identity(
     if any(bar.provider_revision is None for bar in bars):
         raise MDValidationError("stored bars have partial provider_revision identity")
     revisions = {str(bar.provider_revision) for bar in bars}
-    if len(revisions) != 1:
-        raise MDValidationError("snapshot bars must share one provider_revision")
-    return provider, next(iter(revisions))
+    if len(revisions) == 1:
+        return provider, next(iter(revisions))
+    return provider, snapshot_revision_identity(
+        provider,
+        [(bar.time, bar.revision, str(bar.provider_revision)) for bar in bars],
+    )
 
 
 class _OfflineProviderAdapter:

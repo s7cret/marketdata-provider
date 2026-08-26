@@ -155,12 +155,7 @@ class PublicMarketRestSource:
 
 
 class MarketDataService:
-    """Canonical stored market data pipeline.
-
-    Public provider calls flow through this service so exchange-specific REST
-    and archive details stay in source adapters, while cache, coverage and
-    aggregation behavior remain shared.
-    """
+    """Canonical shared storage, coverage, source, and aggregation pipeline."""
 
     def __init__(self, config: MarketDataConfig):
         self.config = config
@@ -176,7 +171,11 @@ class MarketDataService:
                 return series_from_market_bars(query, bars, source="storage")
             self._ensure_stored(base_query, progress_callback=progress_callback)
             bars = self._stored_bars(base_query)
-            if bars and not _coverage_complete(bars, query):
+            if (
+                bars
+                and query.gap_policy == "fail"
+                and not _coverage_complete(bars, query)
+            ):
                 raise CoverageValidationError(
                     "Stored/provider bars do not cover every requested timestamp"
                 )
@@ -195,7 +194,7 @@ class MarketDataService:
         if derived:
             self._merge_derived_bars(query, derived)
             derived = self._stored_bars(query)
-            if not _coverage_complete(derived, query):
+            if query.gap_policy == "fail" and not _coverage_complete(derived, query):
                 raise CoverageValidationError(
                     "Derived bars do not cover every requested timestamp"
                 )

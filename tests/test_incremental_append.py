@@ -153,6 +153,33 @@ def test_service_fails_closed_when_provider_does_not_repair_internal_gap(
         service.fetch_bars(query)
 
 
+def test_service_returns_partial_coverage_when_gap_metadata_is_allowed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = MarketDataService(
+        MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))
+    )
+    service.store.segments.replace_all([bar(60_000), bar(180_000)], **KEY)
+    query = BarQuery(
+        InstrumentKey("binance", "spot", "BTCUSDT"),
+        parse_timeframe("1m"),
+        60_000,
+        240_000,
+        gap_policy="allow_with_metadata",
+    )
+    monkeypatch.setattr(
+        service,
+        "_fetch_from_sources",
+        lambda _query, progress_callback=None: [bar(60_000), bar(180_000)],
+    )
+
+    result = service.fetch_bars(query)
+
+    assert [item.time for item in result.bars] == [60_000, 180_000]
+    assert result.coverage.is_complete is False
+    assert result.coverage.missing_intervals == ((120_000, 180_000),)
+
+
 def test_live_strictly_newer_close_uses_append_without_full_history_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
