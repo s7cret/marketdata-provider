@@ -51,6 +51,27 @@ def test_top_level_exports_calendar_aware_next_open_time() -> None:
     assert next_open_time_ms(1_704_067_200_000, "1M") == 1_706_745_600_000
 
 
+def test_exchange_provider_exposes_lightweight_series_fetch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider = create_provider(_config(storage=StorageConfig(cache_dir=tmp_path)))
+    query = _query()
+    expected = object()
+    callback = object()
+    calls: list[tuple[BarQuery, object]] = []
+
+    def fetch_series(request: BarQuery, progress_callback=None):
+        calls.append((request, progress_callback))
+        return expected
+
+    monkeypatch.setattr(provider.service, "fetch_bars", fetch_series)  # type: ignore[attr-defined]
+
+    result = provider.fetch_series(query, progress_callback=callback)  # type: ignore[attr-defined]
+
+    assert result is expected
+    assert calls == [(query, callback)]
+
+
 def _config(**kwargs: object) -> MarketDataConfig:
     return MarketDataConfig(artifact_identity=ARTIFACT_IDENTITY, **kwargs)  # type: ignore[arg-type]
 

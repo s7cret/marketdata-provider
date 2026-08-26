@@ -125,6 +125,32 @@ def snapshot_revision_identity(
     )
 
 
+def snapshot_source_identity(
+    query: BarQuery,
+    bars: list[MarketBar],
+    *,
+    default_provider: str,
+) -> tuple[str, str]:
+    del query
+    providers = {bar.provider for bar in bars if bar.provider}
+    if len(providers) > 1 or (providers and providers != {default_provider}):
+        raise MDValidationError("stored bars disagree on provider identity")
+    provider = next(iter(providers), default_provider)
+    if not bars:
+        raise MDValidationError(
+            "provider_revision is unavailable for an empty snapshot"
+        )
+    if any(bar.provider_revision is None for bar in bars):
+        raise MDValidationError("stored bars have partial provider_revision identity")
+    revisions = {str(bar.provider_revision) for bar in bars}
+    if len(revisions) == 1:
+        return provider, next(iter(revisions))
+    return provider, snapshot_revision_identity(
+        provider,
+        [(bar.time, bar.revision, str(bar.provider_revision)) for bar in bars],
+    )
+
+
 def build_public_snapshot(
     query: BarQuery,
     raw_bars: list[ProviderRawBar],
