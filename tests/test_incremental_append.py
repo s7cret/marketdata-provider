@@ -170,7 +170,9 @@ def test_service_returns_partial_coverage_when_gap_metadata_is_allowed(
     monkeypatch.setattr(
         service,
         "_fetch_from_sources",
-        lambda _query, progress_callback=None: [bar(60_000), bar(180_000)],
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("partial stored coverage must not block on provider repair")
+        ),
     )
 
     result = service.fetch_bars(query)
