@@ -369,6 +369,20 @@ class _CanonicalCandleStoreAdapter:
             stack_id=stack_id,
         )
 
+    def read_series(self, query: BarQuery) -> BarSeries:
+        bars = self.store.get_market_bars(
+            exchange=query.instrument.exchange,
+            market=query.instrument.market,
+            symbol=query.instrument.symbol,
+            timeframe=query.timeframe.canonical,
+            start=query.start_ms,
+            end=query.end_ms,
+        )
+        error = _stored_bars_read_error(query, tuple(bars))
+        if error is not None:
+            raise CoverageValidationError(error)
+        return series_from_market_bars(query, bars, source="storage")
+
     def write(self, snapshot: DataSnapshotV2) -> StoreResult:
         rows_written = 0
         try:

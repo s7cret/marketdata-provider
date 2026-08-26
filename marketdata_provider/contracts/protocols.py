@@ -8,7 +8,7 @@ from marketdata_provider.contracts.events import LiveKlineEvent
 from marketdata_provider.contracts.footprint import FootprintQuery, FootprintSeries
 from marketdata_provider.contracts.instrument import InstrumentKey
 from marketdata_provider.contracts.query import BarQuery
-from marketdata_provider.contracts.series import StoreResult
+from marketdata_provider.contracts.series import BarSeries, StoreResult
 from marketdata_provider.contracts.timeframe import Timeframe
 
 
@@ -24,6 +24,8 @@ class FootprintProvider(Protocol):
 @runtime_checkable
 class CandleStore(Protocol):
     def read(self, query: BarQuery) -> DataSnapshotV2: ...
+
+    def read_series(self, query: BarQuery) -> BarSeries: ...
 
     def write(self, snapshot: DataSnapshotV2) -> StoreResult: ...
 

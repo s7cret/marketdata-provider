@@ -116,10 +116,13 @@ def test_create_candle_store_returns_contract_protocol_and_preserves_window(
 
     result = store.write(snapshot)
     restored = store.read(query)
+    restored_series = store.read_series(query)
 
     assert result.success
     assert result.rows_written == 3
     assert [bar["open_time_utc_ms"] for bar in restored["bars"]] == [60_000]
+    assert [bar.time for bar in restored_series.bars] == [60_000]
+    assert restored_series.coverage.is_complete is True
     assert restored["coverage"]["complete"] is True
     assert restored["coverage"]["covered_end_utc_ms"] == 120_000
     assert store.coverage(query)["complete"] is True
@@ -280,6 +283,8 @@ def test_candle_store_read_rejects_rows_with_mismatched_embedded_identity(
 
     with pytest.raises(CoverageValidationError, match=message):
         store.read(query)
+    with pytest.raises(CoverageValidationError, match=message):
+        store.read_series(query)
 
 
 def test_create_provider_can_wrap_offline_data_as_canonical_protocol(
