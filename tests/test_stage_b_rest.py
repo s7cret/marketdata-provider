@@ -372,6 +372,7 @@ def test_candle_store_write_is_idempotent_across_provider_provenance(tmp_path):
         timeframe=parse_timeframe("15m"),
         start_ms=0,
         end_ms=900000,
+        gap_policy="allow_with_metadata",
     )
     provider = MarketDataService(
         MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))

@@ -11,6 +11,7 @@ from marketdata_provider import (
     create_candle_store,
     create_live_kline_client,
     create_provider,
+    next_open_time_ms,
 )
 from marketdata_provider.canonical.provider import ProviderRawBar
 from marketdata_provider.canonical.provider import (
@@ -43,6 +44,32 @@ ARTIFACT_IDENTITY = ArtifactIdentityConfig(
     producer_commit=PRODUCER_COMMIT,
     stack_id=STACK_ID,
 )
+
+
+def test_top_level_exports_calendar_aware_next_open_time() -> None:
+    assert next_open_time_ms(1_704_067_200_000, "1W") == 1_704_672_000_000
+    assert next_open_time_ms(1_704_067_200_000, "1M") == 1_706_745_600_000
+
+
+def test_exchange_provider_exposes_lightweight_series_fetch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider = create_provider(_config(storage=StorageConfig(cache_dir=tmp_path)))
+    query = _query()
+    expected = object()
+    callback = object()
+    calls: list[tuple[BarQuery, object]] = []
+
+    def fetch_series(request: BarQuery, progress_callback=None):
+        calls.append((request, progress_callback))
+        return expected
+
+    monkeypatch.setattr(provider.service, "fetch_bars", fetch_series)  # type: ignore[attr-defined]
+
+    result = provider.fetch_series(query, progress_callback=callback)  # type: ignore[attr-defined]
+
+    assert result is expected
+    assert calls == [(query, callback)]
 
 
 def _config(**kwargs: object) -> MarketDataConfig:
@@ -110,14 +137,73 @@ def test_create_candle_store_returns_contract_protocol_and_preserves_window(
 
     result = store.write(snapshot)
     restored = store.read(query)
+    restored_series = store.read_series(query)
 
     assert result.success
     assert result.rows_written == 3
     assert [bar["open_time_utc_ms"] for bar in restored["bars"]] == [60_000]
+    assert [bar.time for bar in restored_series.bars] == [60_000]
+    assert restored_series.coverage.is_complete is True
     assert restored["coverage"]["complete"] is True
     assert restored["coverage"]["covered_end_utc_ms"] == 120_000
     assert store.coverage(query)["complete"] is True
     assert store.latest_bar_time(query) == 120_000
+
+
+def test_candle_store_reads_incremental_fetches_with_mixed_revisions(
+    tmp_path: Path,
+) -> None:
+    store = create_candle_store(_config(storage=StorageConfig(cache_dir=tmp_path)))
+    instrument = InstrumentKey("binance", "spot", "BTCUSDT")
+    timeframe = parse_timeframe("1m")
+    for open_time, revision in ((0, "fetch-r1"), (60_000, "fetch-r2")):
+        query = BarQuery(
+            instrument=instrument,
+            timeframe=timeframe,
+            start_ms=open_time,
+            end_ms=open_time + 60_000,
+            source="storage",
+        )
+        snapshot = build_public_snapshot(
+            query,
+            [
+                ProviderRawBar(
+                    instrument_id=instrument.serialize(),
+                    timeframe="1m",
+                    open_time_utc_ms=open_time,
+                    close_time_utc_ms=open_time + 59_999,
+                    open="1",
+                    high="1",
+                    low="1",
+                    close="1",
+                    volume="1",
+                    finality=Finality.FINAL,
+                    provider="binance",
+                    provider_revision=revision,
+                )
+            ],
+            provider_revision=revision,
+        )
+        assert store.write(snapshot).success
+
+    restored = store.read(
+        BarQuery(
+            instrument=instrument,
+            timeframe=timeframe,
+            start_ms=0,
+            end_ms=120_000,
+            source="storage",
+        )
+    )
+
+    snapshot_revision = restored["snapshot_envelope"]["body"]["provider_revision"]
+    assert snapshot_revision["known"] is True
+    assert snapshot_revision["revision"].startswith("sha256:")
+    assert snapshot_revision["revision"] not in {"fetch-r1", "fetch-r2"}
+    assert [bar["provider_revision"] for bar in restored["bars"]] == [
+        snapshot_revision,
+        snapshot_revision,
+    ]
 
 
 def test_candle_store_write_rejects_mixed_series_before_persisting(
@@ -218,6 +304,8 @@ def test_candle_store_read_rejects_rows_with_mismatched_embedded_identity(
 
     with pytest.raises(CoverageValidationError, match=message):
         store.read(query)
+    with pytest.raises(CoverageValidationError, match=message):
+        store.read_series(query)
 
 
 def test_create_provider_can_wrap_offline_data_as_canonical_protocol(

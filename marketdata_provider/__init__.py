@@ -57,6 +57,7 @@ from marketdata_provider.symbols import (
     quote_asset,
     search_symbols,
 )
+from marketdata_provider.timeframes import next_open_time_ms
 
 MarketDataProvider = ContractMarketDataProvider
 
@@ -104,6 +105,7 @@ __all__ = [
     "create_provider",
     "filter_symbol_infos",
     "is_stable_quoted",
+    "next_open_time_ms",
     "normalize_binance_exchange_info_symbols",
     "normalize_bybit_instruments_info_symbols",
     "normalize_symbol",

@@ -21,6 +21,7 @@ from marketdata_provider.canonical.provider import (
     ProviderRawBar,
     build_public_snapshot,
     snapshot_from_market_bars,
+    snapshot_source_identity,
 )
 from marketdata_provider.canonical.store_adapter import (
     market_bar_from_canonical as _market_bar_from_canonical,
@@ -61,6 +62,7 @@ from marketdata_provider.store.segment_checksums import same_canonical_candle
 
 _NATIVE_EXCHANGE_IDS = {exchange.id for exchange in list_exchanges(native_only=True)}
 _CANONICAL_V2_EXCHANGE_IDS = {"binance", "bybit"}
+_snapshot_source_identity = snapshot_source_identity
 
 
 def create_provider(config: MarketDataConfig) -> MarketDataProviderProtocol:
@@ -151,6 +153,9 @@ class _ExchangeProviderAdapter:
         self.config = config
         self.service = MarketDataService(config)
 
+    def fetch_series(self, query: BarQuery, progress_callback=None) -> BarSeries:
+        return self.service.fetch_bars(query, progress_callback=progress_callback)
+
     def fetch_bars(self, query: BarQuery, progress_callback=None) -> DataSnapshotV2:
         exchange = (self.config.default_exchange or query.instrument.exchange).lower()
         if exchange not in _NATIVE_EXCHANGE_IDS:
@@ -182,29 +187,6 @@ class _ExchangeProviderAdapter:
             producer_commit=producer_commit,
             stack_id=stack_id,
         )
-
-
-def _snapshot_source_identity(
-    query: BarQuery,
-    bars: list[MarketBar],
-    *,
-    default_provider: str,
-) -> tuple[str, str]:
-    del query
-    providers = {bar.provider for bar in bars if bar.provider}
-    if len(providers) > 1 or (providers and providers != {default_provider}):
-        raise MDValidationError("stored bars disagree on provider identity")
-    provider = next(iter(providers), default_provider)
-    if not bars:
-        raise MDValidationError(
-            "provider_revision is unavailable for an empty snapshot"
-        )
-    if any(bar.provider_revision is None for bar in bars):
-        raise MDValidationError("stored bars have partial provider_revision identity")
-    revisions = {str(bar.provider_revision) for bar in bars}
-    if len(revisions) != 1:
-        raise MDValidationError("snapshot bars must share one provider_revision")
-    return provider, next(iter(revisions))
 
 
 class _OfflineProviderAdapter:
@@ -364,6 +346,20 @@ class _CanonicalCandleStoreAdapter:
             producer_commit=producer_commit,
             stack_id=stack_id,
         )
+
+    def read_series(self, query: BarQuery) -> BarSeries:
+        bars = self.store.get_market_bars(
+            exchange=query.instrument.exchange,
+            market=query.instrument.market,
+            symbol=query.instrument.symbol,
+            timeframe=query.timeframe.canonical,
+            start=query.start_ms,
+            end=query.end_ms,
+        )
+        error = _stored_bars_read_error(query, tuple(bars))
+        if error is not None:
+            raise CoverageValidationError(error)
+        return series_from_market_bars(query, bars, source="storage")
 
     def write(self, snapshot: DataSnapshotV2) -> StoreResult:
         rows_written = 0

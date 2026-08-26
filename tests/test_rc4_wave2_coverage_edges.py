@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ from marketdata_provider.canonical.provider import (
     build_public_snapshot,
     raw_bar_from_market_bar,
     snapshot_from_market_bars,
+    snapshot_revision_identity,
 )
 from marketdata_provider.canonical.source_identity import bind_source_identity
 from marketdata_provider.compat.v4 import create_legacy_provider
@@ -186,6 +188,40 @@ def test_source_identity_and_market_bar_validation_edges() -> None:
         _bar(revision_state=RevisionState.CORRECTED, revision=0)
 
 
+def test_snapshot_source_identity_tracks_mixed_incremental_revisions() -> None:
+    with pytest.raises(MDValidationError, match="provider is required"):
+        snapshot_revision_identity("", [(0, 0, "r1")])
+    with pytest.raises(MDValidationError, match="empty snapshot"):
+        snapshot_revision_identity("binance", [])
+    with pytest.raises(MDValidationError, match="provider_revision is required"):
+        snapshot_revision_identity("binance", [(0, 0, "")])
+
+    query = _query(end=120_000)
+    first_mapping = [
+        _bar(provider_revision="r1"),
+        _bar(time=60_000, time_close=119_999, provider_revision="r2"),
+    ]
+    second_mapping = [
+        _bar(provider_revision="r2"),
+        _bar(time=60_000, time_close=119_999, provider_revision="r1"),
+    ]
+
+    provider, first_revision = _snapshot_source_identity(
+        query, first_mapping, default_provider="binance"
+    )
+    _, reversed_revision = _snapshot_source_identity(
+        query, list(reversed(first_mapping)), default_provider="binance"
+    )
+    _, second_revision = _snapshot_source_identity(
+        query, second_mapping, default_provider="binance"
+    )
+
+    assert provider == "binance"
+    assert first_revision.startswith("sha256:")
+    assert reversed_revision == first_revision
+    assert second_revision != first_revision
+
+
 def test_factory_offline_and_snapshot_identity_edges(tmp_path: Path) -> None:
     query = _query()
     with pytest.raises(MDValidationError, match="provider identity"):
@@ -198,20 +234,6 @@ def test_factory_offline_and_snapshot_identity_edges(tmp_path: Path) -> None:
             [_bar(), _bar(time=60_000, time_close=119_999, provider_revision=None)],
             default_provider="binance",
         )
-
-    first_order = [
-        _bar(provider_revision="r1"),
-        _bar(time=60_000, time_close=119_999, provider_revision="r2"),
-    ]
-    swapped_order = [
-        _bar(provider_revision="r2"),
-        _bar(time=60_000, time_close=119_999, provider_revision="r1"),
-    ]
-    for mixed in (first_order, swapped_order):
-        with pytest.raises(MDValidationError, match="share one provider_revision"):
-            _snapshot_source_identity(
-                _query(end=120_000), mixed, default_provider="binance"
-            )
 
     uniform = [
         _bar(provider_revision="r1"),
@@ -457,29 +479,36 @@ def test_segment_row_invalid_revision_state() -> None:
 
 def test_snapshot_and_canonical_store_validation_edges(tmp_path: Path) -> None:
     query = _query()
+    raw_bar = ProviderRawBar(
+        instrument_id=query.instrument.serialize(),
+        timeframe="1m",
+        open_time_utc_ms=0,
+        close_time_utc_ms=59_999,
+        open="1",
+        high="2",
+        low="0.5",
+        close="1.5",
+        volume="1",
+        finality=Finality.FINAL,
+        provider="binance",
+        provider_revision="fixture-v1",
+    )
     valid = build_public_snapshot(
         query,
-        [
-            ProviderRawBar(
-                instrument_id=query.instrument.serialize(),
-                timeframe="1m",
-                open_time_utc_ms=0,
-                close_time_utc_ms=59_999,
-                open="1",
-                high="2",
-                low="0.5",
-                close="1.5",
-                volume="1",
-                finality=Finality.FINAL,
-                provider="binance",
-                provider_revision="fixture-v1",
-            )
-        ],
+        [raw_bar],
         provider_revision=PROVIDER_REVISION,
         producer_commit=PRODUCER_COMMIT,
         stack_id=STACK_ID,
     )
     assert _validate_canonical_snapshot(valid)["series_hash"] == valid["series_hash"]
+    with pytest.raises(MDValidationError, match="share one provider"):
+        build_public_snapshot(
+            query,
+            [raw_bar, replace(raw_bar, provider="bybit")],
+            provider_revision=PROVIDER_REVISION,
+            producer_commit=PRODUCER_COMMIT,
+            stack_id=STACK_ID,
+        )
 
     with pytest.raises(MDValidationError, match="query/bars"):
         _validate_canonical_snapshot({})

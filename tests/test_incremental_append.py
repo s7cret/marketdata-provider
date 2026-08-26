@@ -153,6 +153,94 @@ def test_service_fails_closed_when_provider_does_not_repair_internal_gap(
         service.fetch_bars(query)
 
 
+@pytest.mark.parametrize(
+    ("timeframe", "end_ms", "message"),
+    [("1m", 60_000, "Stored/provider"), ("5m", 300_000, "Derived")],
+)
+def test_service_fails_closed_when_strict_coverage_is_empty(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    timeframe: str,
+    end_ms: int,
+    message: str,
+) -> None:
+    service = MarketDataService(
+        MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))
+    )
+    query = BarQuery(
+        InstrumentKey("binance", "spot", "BTCUSDT"),
+        parse_timeframe(timeframe),
+        0,
+        end_ms,
+    )
+    monkeypatch.setattr(
+        service, "_fetch_from_sources", lambda _query, progress_callback=None: []
+    )
+
+    with pytest.raises(CoverageValidationError, match=message):
+        service.fetch_bars(query)
+
+
+def test_service_returns_partial_coverage_when_gap_metadata_is_allowed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = MarketDataService(
+        MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))
+    )
+    service.store.segments.replace_all([bar(60_000), bar(180_000)], **KEY)
+    query = BarQuery(
+        InstrumentKey("binance", "spot", "BTCUSDT"),
+        parse_timeframe("1m"),
+        60_000,
+        240_000,
+        gap_policy="allow_with_metadata",
+    )
+    monkeypatch.setattr(
+        service,
+        "_fetch_from_sources",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("partial stored coverage must not block on provider repair")
+        ),
+    )
+
+    result = service.fetch_bars(query)
+
+    assert [item.time for item in result.bars] == [60_000, 180_000]
+    assert result.coverage.is_complete is False
+    assert result.coverage.missing_intervals == ((120_000, 180_000),)
+
+
+def test_explicit_provider_repairs_partial_stored_coverage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = MarketDataService(
+        MarketDataConfig(storage=StorageConfig(cache_dir=tmp_path))
+    )
+    service.store.segments.replace_all([bar(60_000), bar(180_000)], **KEY)
+    query = BarQuery(
+        InstrumentKey("binance", "spot", "BTCUSDT"),
+        parse_timeframe("1m"),
+        60_000,
+        240_000,
+        source="provider",
+        gap_policy="allow_with_metadata",
+    )
+    fetched: list[BarQuery] = []
+
+    def repair(request: BarQuery, progress_callback=None) -> list[MarketBar]:
+        del progress_callback
+        fetched.append(request)
+        return [bar(120_000)]
+
+    monkeypatch.setattr(service, "_fetch_from_sources", repair)
+
+    result = service.fetch_bars(query)
+
+    assert fetched == [query]
+    assert [item.time for item in result.bars] == [60_000, 120_000, 180_000]
+    assert result.coverage.is_complete is True
+
+
 def test_live_strictly_newer_close_uses_append_without_full_history_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
