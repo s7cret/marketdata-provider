@@ -31,10 +31,8 @@ from marketdata_provider.exchanges.public_spot import (
     public_market_get_bars_sync,
     public_spot_get_bars_sync,
 )
-from marketdata_provider.service_coverage import (
-    coverage_complete as _coverage_complete,
-    include_current_bar as _with_current,
-)
+from marketdata_provider.service_coverage import coverage_complete as _coverage_complete
+from marketdata_provider.service_coverage import include_current_bar as _with_current
 from marketdata_provider.store.candle_store import CandleStore
 from marketdata_provider.timeframes import close_time_ms
 
