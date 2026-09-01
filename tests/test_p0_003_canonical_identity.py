@@ -381,12 +381,12 @@ def test_decimal_contract_boundary_rejects_float(field: str) -> None:
         bar(**{field: 1.25})
 
 
-def test_release_identity_and_contract_dependency_are_rc4_publishable() -> None:
+def test_release_identity_and_contract_dependency_are_rc6_publishable() -> None:
     project = Path("pyproject.toml").read_text(encoding="utf-8")
 
-    assert __version__ == EXPECTED_VERSION == "5.0.0rc5"
-    assert 'version = "5.0.0rc5"' in project
-    assert '"openpine-contracts==5.0.0rc5"' in project
+    assert __version__ == EXPECTED_VERSION == "5.0.0rc6"
+    assert 'version = "5.0.0rc6"' in project
+    assert '"openpine-contracts==5.0.0rc6"' in project
     assert "git+" not in project
 
 

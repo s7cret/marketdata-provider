@@ -16,7 +16,7 @@ from openpine_contracts.hashing import (
 from marketdata_provider.errors import MDValidationError
 
 PRODUCER = "marketdata-provider"
-PRODUCER_VERSION = "5.0.0-rc.5"
+PRODUCER_VERSION = "5.0.0-rc.6"
 SCHEMA_VERSION = "2.1.0"
 BAR_SCHEMA_ID = "openpine.marketdata.bar.v2"
 SNAPSHOT_SCHEMA_ID = "openpine.marketdata.v2"

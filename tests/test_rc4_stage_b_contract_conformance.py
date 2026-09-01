@@ -58,7 +58,7 @@ def test_make_canonical_bar_returns_sealed_standalone_contract_envelope() -> Non
     assert candidate["schema_id"] == "openpine.marketdata.bar.v2"
     assert candidate["schema_version"] == "2.1.0"
     assert candidate["producer"] == "marketdata-provider"
-    assert candidate["producer_version"] == "5.0.0-rc.5"
+    assert candidate["producer_version"] == "5.0.0-rc.6"
     assert candidate["producer_commit"] == PRODUCER_COMMIT
     assert candidate["stack_id"] == STACK_ID
     assert candidate["content_hash"]

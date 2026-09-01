@@ -61,7 +61,7 @@ from marketdata_provider.timeframes import next_open_time_ms
 
 MarketDataProvider = ContractMarketDataProvider
 
-__version__ = "5.0.0rc5"
+__version__ = "5.0.0rc6"
 __all__ = [
     "DEFAULT_STABLE_QUOTE_ASSETS",
     "RUNTIME_CONTRACT_VERSION",
