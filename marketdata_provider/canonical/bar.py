@@ -16,6 +16,7 @@ from marketdata_provider.canonical.envelope import (
     seal_and_validate,
     utc_now_ms,
 )
+from marketdata_provider.canonical.source_identity import verify_snapshot_bar_revisions
 from marketdata_provider.errors import (
     MDBarConflict,
     MDMissingFinality,
@@ -536,8 +537,6 @@ def build_data_snapshot(
             raise MDValidationError("bar timeframe does not match snapshot")
         if bar["snapshot_id"] != snapshot_instance_id:
             raise MDValidationError("bar snapshot_id does not match snapshot")
-        if bar["provider_revision"] != expected_provider_revision:
-            raise MDValidationError("bar provider_revision does not match snapshot")
         open_time = int(bar["open_time_utc_ms"])
         close_time = int(bar["close_time_utc_ms"])
         if open_time < start_ms or close_time >= end_ms:
@@ -546,6 +545,8 @@ def build_data_snapshot(
             raise MDValidationError("bar open_time is not monotonic")
         previous_open = open_time
         normalized.append(bar)
+
+    verify_snapshot_bar_revisions(normalized, expected_provider_revision)
 
     kept: list[dict[str, Any]] = []
     duplicates: list[dict[str, Any]] = []

@@ -29,7 +29,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: s7cret/openpine-contracts
-          ref: 6b5e67445e2772057cd877e158c7aa0c58bdfe37
+          ref: 904e8f660834a10d3382cd1b2ed7380c24b73072
           path: openpine-contracts
 
       - name: Set up Python ${{ matrix.python-version }}

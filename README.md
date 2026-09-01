@@ -1,8 +1,8 @@
-# MarketData Provider 4.0.2
+# MarketData Provider 5.0.0rc6
 
 > Normalized exchange market-data contracts, cache/storage workflows, archive adapters, and streaming helpers for OpenPine.
 
-[![Version](https://img.shields.io/badge/version-4.0.2-blue)](https://github.com/s7cret/marketdata-provider) [![Python](https://img.shields.io/badge/python-%3E%3D3.10-blue)](https://github.com/s7cret/marketdata-provider) [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/s7cret/marketdata-provider)
+[![Version](https://img.shields.io/badge/version-5.0.0rc6-blue)](https://github.com/s7cret/marketdata-provider) [![Python](https://img.shields.io/badge/python-%3E%3D3.11-blue)](https://github.com/s7cret/marketdata-provider) [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/s7cret/marketdata-provider)
 
 
 **GitHub description:** MarketData Provider normalizes OHLCV, footprint, cache, archive, and live-streaming data for OpenPine, with native Binance/Bybit adapters and explicit exchange capability metadata.
@@ -24,7 +24,7 @@ Default tests are hermetic and do not require live external services.
 - Canonical `InstrumentKey`, `Timeframe`, `BarQuery`, `BarSeries`, and coverage contracts.
 - Normalized OHLCV bars from offline, cache, archive, REST, and streaming sources.
 - SQLite/segment-based candle, raw, footprint, current, checkpoint, and repair stores.
-- Binance and Bybit native adapters in the 4.0.2 line.
+- Binance and Bybit canonical v2 adapters in the 5.0.0rc6 line.
 - Exchange capability registry for native/planned adapter discovery.
 - Footprint aggregation foundations for trade-derived volume-at-price data.
 - Durable reconciliation and repair logs for cache health workflows.
@@ -32,7 +32,7 @@ Default tests are hermetic and do not require live external services.
 
 ## Exchange support
 
-| Exchange | 4.0.2 status | Native market types |
+| Exchange | 5.0.0rc6 status | Native market types |
 |---|---|---|
 | Binance | Native adapter | `spot`, `usdm` |
 | Bybit | Native adapter | `spot`, `linear` |
@@ -56,7 +56,7 @@ python -m pip install -e '.[dev]'
 Install from GitHub tag:
 
 ```bash
-python -m pip install 'git+https://github.com/s7cret/marketdata-provider.git@v4.0.2'
+python -m pip install 'git+https://github.com/s7cret/marketdata-provider.git@v5.0.0rc6'
 ```
 
 Optional extras:

@@ -1,5 +1,11 @@
 # Changelog
 
+## 5.0.0rc6
+
+- Pinned CI and live acceptance to the exact OpenPine Contracts RC6 commit.
+- Made per-bar provider revisions stable across query windows and preserved them beneath aggregate snapshot identity.
+- Added scheduled live acceptance for canonical `create_provider()` Binance spot `SOLUSDT` 1m snapshots.
+
 ## 4.0.2
 
 - Removed repeated full-file checksum scans and duplicate persistence from online hot paths.

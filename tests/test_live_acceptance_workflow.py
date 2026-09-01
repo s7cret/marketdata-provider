@@ -47,6 +47,10 @@ def test_live_acceptance_workflow_is_scheduled_manual_bounded_and_separate() -> 
     assert "if-no-files-found: error" in workflow
     assert "secrets." not in workflow
     assert "--mode live" not in deterministic_ci
+    assert (
+        "tests/test_real_data_acceptance.py::"
+        "test_public_create_provider_binance_spot_solusdt_1m" in workflow
+    )
 
 
 def test_live_stream_extra_supports_socks_proxy_environments() -> None:

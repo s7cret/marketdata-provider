@@ -11,14 +11,18 @@ from marketdata_provider.canonical.bar import (
     build_data_snapshot,
     make_canonical_bar,
 )
-from marketdata_provider.canonical.envelope import normalize_provider_revision
+from marketdata_provider.canonical.envelope import (
+    known_provider_revision,
+    normalize_provider_revision,
+)
+from marketdata_provider.canonical.source_identity import snapshot_revision_identity
 from marketdata_provider.compat.v4 import finality_from_closed
 from marketdata_provider.contracts.query import BarQuery
 from marketdata_provider.core.bar import MarketBar
 from marketdata_provider.errors import MDMissingFinality, MDValidationError
 
 _SNAPSHOT_ID_SCHEMA = "marketdata-provider.snapshot-id.v1"
-_SNAPSHOT_REVISION_SCHEMA = "marketdata-provider.snapshot-revision.v1"
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,40 +92,6 @@ def raw_bar_from_market_bar(
         provider_revision=source_revision,
         revision_state=bar.revision_state,
         revision=bar.revision,
-    )
-
-
-def snapshot_revision_identity(
-    provider: str,
-    bars: list[tuple[int, int, str]],
-) -> str:
-    """Return one exact revision for a uniform or incremental snapshot."""
-
-    if not provider:
-        raise MDValidationError("provider is required")
-    if not bars:
-        raise MDValidationError(
-            "provider_revision is unavailable for an empty snapshot"
-        )
-    ordered = sorted(bars, key=lambda item: (item[0], item[1], item[2]))
-    revisions = {provider_revision for _, _, provider_revision in ordered}
-    if "" in revisions:
-        raise MDValidationError("provider_revision is required")
-    if len(revisions) == 1:
-        return next(iter(revisions))
-    return content_hash(
-        {
-            "provider": provider,
-            "bars": [
-                {
-                    "open_time_utc_ms": open_time,
-                    "revision": revision,
-                    "provider_revision": provider_revision,
-                }
-                for open_time, revision, provider_revision in ordered
-            ],
-        },
-        schema_id=_SNAPSHOT_REVISION_SCHEMA,
     )
 
 
@@ -196,7 +166,7 @@ def build_public_snapshot(
                 volume=item.volume,
                 snapshot_id=snapshot_id,
                 provider=item.provider,
-                provider_revision=expected_revision,
+                provider_revision=known_provider_revision(item.provider_revision),
                 producer_commit=producer_commit,
                 stack_id=stack_id,
                 created_at_utc_ms=query.end_ms,

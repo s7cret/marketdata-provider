@@ -424,7 +424,7 @@ def test_snapshot_rejects_provider_switch_revocation_tail_and_overlap() -> None:
         revision=1,
         close="1.6",
     )
-    with pytest.raises(MDValidationError, match="provider changed"):
+    with pytest.raises(MDValidationError, match="snapshot bars must share one provider"):
         snapshot("provider-switch", [original, provider_switch])
 
     revoked = successor(original, revision_state=RevisionState.REVOKED, revision=1)

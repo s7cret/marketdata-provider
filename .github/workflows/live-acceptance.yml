@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: s7cret/openpine-contracts
-          ref: 33b6e2a70f5442e5210de907f724739cf07c64bd
+          ref: 904e8f660834a10d3382cd1b2ed7380c24b73072
           path: openpine-contracts
 
       - name: Set up Python
@@ -44,6 +44,9 @@ jobs:
         run: |
           mkdir -p artifacts
           timeout 330s python -m marketdata_provider.acceptance --mode live --timeout 15 --json artifacts/live-acceptance.json
+
+      - name: Probe canonical create_provider Binance spot SOLUSDT 1m
+        run: timeout 120s python -m pytest -q -m live_network tests/test_real_data_acceptance.py::test_public_create_provider_binance_spot_solusdt_1m
 
       - name: Upload classified acceptance evidence
         if: always()

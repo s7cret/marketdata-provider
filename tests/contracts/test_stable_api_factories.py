@@ -201,8 +201,8 @@ def test_candle_store_reads_incremental_fetches_with_mixed_revisions(
     assert snapshot_revision["revision"].startswith("sha256:")
     assert snapshot_revision["revision"] not in {"fetch-r1", "fetch-r2"}
     assert [bar["provider_revision"] for bar in restored["bars"]] == [
-        snapshot_revision,
-        snapshot_revision,
+        {"known": True, "revision": "fetch-r1"},
+        {"known": True, "revision": "fetch-r2"},
     ]
 
 
