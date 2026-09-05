@@ -76,6 +76,8 @@ _BYBIT = {
 
 
 def canonical_timeframe(tf: str) -> str:
+    if type(tf) is not str or not tf.strip():
+        raise MDTimeframeUnsupported("Timeframe must be a nonempty string")
     raw = tf.strip()
     if raw in {"D", "1D", "1d"}:
         return "1D"
@@ -83,12 +85,20 @@ def canonical_timeframe(tf: str) -> str:
         return "1W"
     if raw in {"M", "1M"}:
         return "1M"
-    if raw.isdigit():
+    # Uppercase M is calendar months, never minutes. This provider currently
+    # supports one calendar month only; reject 2M instead of relabelling as 2m.
+    if raw.endswith("M"):
+        raise MDTimeframeUnsupported(f"Unsupported calendar month timeframe: {tf}")
+    if re.fullmatch(r"[0-9]+", raw):
+        if int(raw) <= 0:
+            raise MDTimeframeUnsupported("Timeframe duration must be positive")
         return f"{int(raw)}m"
-    m = re.fullmatch(r"(\d+)([smhd])", raw, re.IGNORECASE)
+    m = re.fullmatch(r"([0-9]+)([smhd])", raw, re.IGNORECASE)
     if not m:
         raise MDTimeframeUnsupported(f"Unsupported timeframe: {tf}")
     n, unit = int(m.group(1)), m.group(2).lower()
+    if n <= 0:
+        raise MDTimeframeUnsupported("Timeframe duration must be positive")
     if unit == "d":
         if n == 1:
             return "1D"
@@ -192,3 +202,22 @@ def default_intrabar_tf(chart_tf: str) -> str:
 
 def _raise_tf(tf: str) -> str:
     raise MDTimeframeUnsupported(f"Unsupported exchange timeframe: {tf}")
+
+
+def to_pine_timeframe(tf: str) -> str:
+    """Translate provider units to Pine notation without conflating m and M.
+
+    Provider hours become Pine minutes. Calendar periods are preserved rather
+    than approximated as fixed seconds. The Pine consumer still validates its
+    language-specific multiplier limits.
+    """
+    value = canonical_timeframe(tf)
+    if value in {"1D", "1W", "1M"}:
+        return value
+    if value.endswith("h"):
+        return str(int(value[:-1]) * 60)
+    if value.endswith("m"):
+        return str(int(value[:-1]))
+    if value.endswith("s"):
+        return value[:-1] + "S"
+    raise MDTimeframeUnsupported(f"Cannot translate provider timeframe to Pine: {tf}")
