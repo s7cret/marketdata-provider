@@ -345,6 +345,7 @@ class _CanonicalCandleStoreAdapter:
             provider_revision=known_provider_revision(provider_revision),
             producer_commit=producer_commit,
             stack_id=stack_id,
+            schema_validate=False,
         )
 
     def read_series(self, query: BarQuery) -> BarSeries:

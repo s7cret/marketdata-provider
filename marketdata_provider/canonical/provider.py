@@ -129,6 +129,7 @@ def build_public_snapshot(
     producer_commit: str,
     stack_id: str,
     finality_policy: str = "CLOSED_BAR_ONLY",
+    schema_validate: bool = True,
 ) -> DataSnapshotV2:
     expected_revision = normalize_provider_revision(provider_revision)
     ordered = sorted(raw_bars, key=lambda item: (item.open_time_utc_ms, item.revision))
@@ -178,6 +179,7 @@ def build_public_snapshot(
                 finality=item.finality,
                 revision_state=item.revision_state,
                 revision=item.revision,
+                schema_validate=schema_validate,
             )
             canonical.append(bar)
             previous_hash = str(bar["bar_content_hash"])
@@ -207,6 +209,7 @@ def build_public_snapshot(
         bars=bars,
         finality_policy=finality_policy,
         clock=lambda: query.end_ms,
+        schema_validate=schema_validate,
     )
 
 
@@ -219,6 +222,7 @@ def snapshot_from_market_bars(
     producer_commit: str,
     stack_id: str,
     finality_policy: str = "CLOSED_BAR_ONLY",
+    schema_validate: bool = True,
 ) -> DataSnapshotV2:
     raw = [
         raw_bar_from_market_bar(
@@ -236,4 +240,5 @@ def snapshot_from_market_bars(
         producer_commit=producer_commit,
         stack_id=stack_id,
         finality_policy=finality_policy,
+        schema_validate=schema_validate,
     )

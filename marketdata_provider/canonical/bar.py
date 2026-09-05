@@ -252,6 +252,7 @@ def make_canonical_bar(
     revision: int = 0,
     close_time_utc_ms: int | None = None,
     created_at_utc_ms: int | None = None,
+    schema_validate: bool = True,
 ) -> dict[str, Any]:
     instrument = _required_text("instrument_id", instrument_id)
     canonical_tf = _canonical_timeframe(timeframe)
@@ -299,7 +300,7 @@ def make_canonical_bar(
         "superseded_bar_hash": lineage_hash,
     }
     envelope["bar_content_hash"] = _bar_content_hash(envelope)
-    return seal_and_validate(BAR_SCHEMA_ID, envelope)
+    return seal_and_validate(BAR_SCHEMA_ID, envelope, schema_validate=schema_validate)
 
 
 def _normalize_snapshot_bar(bar: Mapping[str, Any]) -> dict[str, Any]:
@@ -513,6 +514,7 @@ def build_data_snapshot(
     bars: Iterable[Mapping[str, Any]],
     finality_policy: str = "CLOSED_BAR_ONLY",
     clock: Callable[[], int] | None = None,
+    schema_validate: bool = True,
 ) -> dict[str, Any]:
     snapshot_instance_id = _required_text("snapshot_id", snapshot_id)
     instrument = _required_text("instrument_id", instrument_id)
@@ -623,6 +625,7 @@ def build_data_snapshot(
             "kind": "snapshot",
             "body": body,
         },
+        schema_validate=schema_validate,
     )
     diagnostics = {
         "coverage": coverage_details,

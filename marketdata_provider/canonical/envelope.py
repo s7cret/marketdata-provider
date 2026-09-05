@@ -90,9 +90,15 @@ def envelope_metadata(
     }
 
 
-def seal_and_validate(schema_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+def seal_and_validate(
+    schema_id: str,
+    payload: Mapping[str, Any],
+    *,
+    schema_validate: bool = True,
+) -> dict[str, Any]:
     sealed = seal_content_hash(payload, schema_id=schema_id)
-    validate_payload(schema_id, sealed)
-    if not verify_content_hash(sealed, schema_id=schema_id):
-        raise MDValidationError("content_hash verification failed after sealing")
+    if schema_validate:
+        validate_payload(schema_id, sealed)
+        if not verify_content_hash(sealed, schema_id=schema_id):
+            raise MDValidationError("content_hash verification failed after sealing")
     return sealed
