@@ -13,9 +13,9 @@ from typing import Any
 
 from openpine_contracts import Finality
 
+from marketdata_provider.canonical.revisions import resolve_bar_revisions
 from marketdata_provider.canonical.bar import (
     _normalize_snapshot_bar,
-    _resolve_bar_group,
 )
 from marketdata_provider.errors import MDValidationError
 
@@ -77,7 +77,7 @@ def admit_canonical_bars(
     previous_close: int | None = None
 
     def select() -> dict[str, Any] | None:
-        selected, _, _ = _resolve_bar_group(group)
+        selected, _, _ = resolve_bar_revisions(group)
         if selected is not None and (
             finality_policy == "ALLOW_OPEN" or selected["finality"] is Finality.FINAL
         ):

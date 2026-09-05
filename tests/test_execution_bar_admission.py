@@ -117,3 +117,12 @@ def test_out_of_order_snapshot_mix_and_orphan_correction_fail():
 def test_conflicting_duplicate_revision_fails():
     with pytest.raises(MDBarConflict, match="same revision"):
         list(admit_canonical_bars([bar(), bar(close="12")]))
+
+
+def test_revision_resolver_rejects_empty_group():
+    from marketdata_provider.canonical.revisions import resolve_bar_revisions
+    from marketdata_provider.errors import MDValidationError
+    import pytest
+
+    with pytest.raises(MDValidationError, match="must not be empty"):
+        resolve_bar_revisions([])
