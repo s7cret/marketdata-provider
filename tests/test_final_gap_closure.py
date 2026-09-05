@@ -426,16 +426,13 @@ def test_offline_parquet_and_zstd_optional_paths(
     from marketdata_provider.providers.offline import OfflineDataProvider
     from marketdata_provider.store.raw_store import RawStore
 
-    table = types.SimpleNamespace(
-        to_pylist=lambda: [
-            {"time": 0, "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 1}
-        ]
-    )
-    pq = types.SimpleNamespace(read_table=lambda path: table)
-    monkeypatch.setitem(sys.modules, "pyarrow", types.ModuleType("pyarrow"))
-    monkeypatch.setitem(sys.modules, "pyarrow.parquet", pq)
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
     parquet_path = tmp_path / "bars.parquet"
-    parquet_path.write_bytes(b"stub")
+    pq.write_table(pa.Table.from_pylist([
+        {"time": 0, "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 1}
+    ]), parquet_path)
     assert (
         OfflineDataProvider(parquet_path).get_bars("BTCUSDT", "1m", None, None)[0].time
         == 0

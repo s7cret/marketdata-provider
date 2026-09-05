@@ -331,7 +331,7 @@ def test_offline_and_rest_adapters_edges(tmp_path: Path) -> None:
     csv_path.write_text(
         "timestamp,open,high,low,close,volume,close_time\n0,1,2,0.5,1.5,,59999\n60000,2,3,1.5,2.5,7,119999\n"
     )
-    provider = OfflineDataProvider(csv_path, timeframe="1m")
+    provider = OfflineDataProvider(csv_path, timeframe="1m", missing_volume="zero")
     assert len(provider.get_bars("BTC", "1m", 0, 120_000, max_bars=1)) == 1
     assert (
         len(

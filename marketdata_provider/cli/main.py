@@ -115,7 +115,13 @@ def _cmd_market_types(args: argparse.Namespace) -> int:
 
 def _bars_from_source(args: argparse.Namespace):
     if getattr(args, "path", None):
-        return OfflineDataProvider(args.path, timeframe=args.timeframe).get_bars(
+        return OfflineDataProvider(
+            args.path,
+            timeframe=args.timeframe,
+            symbol=args.symbol,
+            timestamp_unit=getattr(args, "timestamp_unit", "ms"),
+            missing_volume=getattr(args, "missing_volume", "error"),
+        ).get_bars(
             args.symbol, args.timeframe, args.start, args.end, max_bars=args.max_bars
         )
     ns = normalize_symbol(
@@ -514,6 +520,18 @@ def _common(sub: argparse.ArgumentParser, *, source_required: bool = True) -> No
     sub.add_argument("--exchange")
     sub.add_argument("--market")
     sub.add_argument("--path", help="offline CSV/parquet source")
+    sub.add_argument(
+        "--timestamp-unit",
+        choices=("ms", "s", "iso8601"),
+        default="ms",
+        help="offline timestamps only; query bounds remain UTC milliseconds",
+    )
+    sub.add_argument(
+        "--missing-volume",
+        choices=("error", "zero"),
+        default="error",
+        help="reject missing volume by default; zero filling must be explicit",
+    )
     sub.add_argument(
         "--cache", action="store_true", help="read source bars from local cache"
     )
