@@ -1,0 +1,81 @@
+diff --git a/docs/OFFLINE_INPUT.md b/docs/OFFLINE_INPUT.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..30a5cbdc07b192bfcbc3df68bb61634a1e66f556
+--- /dev/null
++++ b/docs/OFFLINE_INPUT.md
+@@ -0,0 +1,37 @@
++# Strict offline input
++
++`OfflineDataProvider` reads CSV and genuine Parquet. Query `start` is inclusive,
++`end` exclusive; query bounds always use UTC milliseconds. Input timestamps use
++milliseconds unless `timestamp_unit="s"` or `"iso8601"` is explicitly selected.
++ISO timestamps require an offset/timezone and exact millisecond precision.
++Timestamp units are never inferred from magnitude. Missing timestamps are errors,
++not the Unix epoch. Equal aliases such as `time=0,timestamp=0` are accepted;
++conflicting aliases are rejected.
++
++OHLC and volume must be finite, representable numeric values. Missing volume is an
++error by default. An explicitly configured `missing_volume="zero"` permits filling
++missing volume only, not OHLC or time. Duplicate/out-of-order rows are not silently
++sorted or deduplicated. Explicit close timestamps use the same input unit and must
++match the timeframe's inclusive final millisecond; omitting the close column
++allows it to be computed. Empty supplied close cells are invalid.
++
++Bind `symbol` and `timeframe` when constructing a provider to prevent reusing the
++file under another query identity. Optional row-level symbol/timeframe columns are
++checked too. A file without symbol metadata still relies on the caller's explicit
++binding: no external instrument provenance is invented.
++
++CSV is iterated row by row. Parquet uses `ParquetFile.iter_batches` (default 4096
++rows, configurable from 1 to 65536), projecting relevant columns. All rows,
++including those outside the selected range or after `max_bars`, are validated.
++Only matching bars are retained. This bounds intermediate parsing memory but does
++not avoid scanning the whole file; the returned selected list still materializes.
++There is no claim of immutable snapshot proof, row-group predicate pushdown or
++concurrent-file-write protection. Do not mutate files while importing.
++
++```sh
++marketdata validate --path bars.csv --timeframe 1m --timestamp-unit ms
++marketdata validate --path seconds.csv --timeframe 1m --timestamp-unit s --missing-volume zero
++```
++
++Errors identify the file, source row and offending field. Existing valid datasets
++retain their values and row ordering. No file is rewritten during validation.
+diff --git a/marketdata_provider/cli/main.py b/marketdata_provider/cli/main.py
+index 6d109a105178069823a794110d4f6e91a47f78e2..33cb2a03e61fc8b6eb6b43ea1233bb1c3e4219e3 100644
+--- a/marketdata_provider/cli/main.py
++++ b/marketdata_provider/cli/main.py
+@@ -115,7 +115,13 @@ def _cmd_market_types(args: argparse.Namespace) -> int:
+ 
+ def _bars_from_source(args: argparse.Namespace):
+     if getattr(args, "path", None):
+-        return OfflineDataProvider(args.path, timeframe=args.timeframe).get_bars(
++        return OfflineDataProvider(
++            args.path,
++            timeframe=args.timeframe,
++            symbol=args.symbol,
++            timestamp_unit=getattr(args, "timestamp_unit", "ms"),
++            missing_volume=getattr(args, "missing_volume", "error"),
++        ).get_bars(
+             args.symbol, args.timeframe, args.start, args.end, max_bars=args.max_bars
+         )
+     ns = normalize_symbol(
+@@ -514,6 +520,18 @@ def _common(sub: argparse.ArgumentParser, *, source_required: bool = True) -> No
+     sub.add_argument("--exchange")
+     sub.add_argument("--market")
+     sub.add_argument("--path", help="offline CSV/parquet source")
++    sub.add_argument(
++        "--timestamp-unit",
++        choices=("ms", "s", "iso8601"),
++        default="ms",
++        help="offline timestamps only; query bounds remain UTC milliseconds",
++    )
++    sub.add_argument(
++        "--missing-volume",
++        choices=("error", "zero"),
++        default="error",
++        help="reject missing volume by default; zero filling must be explicit",
++    )
+     sub.add_argument(
+         "--cache", action="store_true", help="read source bars from local cache"
+     )

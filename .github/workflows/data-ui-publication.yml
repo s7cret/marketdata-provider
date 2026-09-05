@@ -1,0 +1,75 @@
+name: Verify strict offline data and timeframe publication
+'on':
+  push:
+    branches: ['ops/rc6-data-ui-20260905']
+permissions:
+  contents: read
+concurrency:
+  group: rc6-data-ui-publication
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Restore reviewed source with exact patch tree and commit hashes
+        run: |
+          cp .github/data-ui/restore.py "$RUNNER_TEMP/restore.py"
+          python "$RUNNER_TEMP/restore.py" restore .github/data-ui/manifest.json "$RUNNER_TEMP/evidence"
+          cp "$RUNNER_TEMP/restore.py" "$RUNNER_TEMP/evidence/restore.py"
+      - name: Install from clean source outside the tested checkout
+        run: |
+          python -m pip install setuptools==84.0.0 wheel==0.48.0 build==1.6.0
+          mkdir -p "$RUNNER_TEMP/build-source"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/build-source"
+          python -m pip install 'git+https://github.com/s7cret/openpine-contracts.git@d1382d1c0a1f867cc184016d8ac670a9264a7938' "$RUNNER_TEMP/build-source[dev,parquet,stream,zstd]"
+      - name: Complete deterministic provider functional suite
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+        run: python -m pytest -q -m 'not live_network' --junitxml="$RUNNER_TEMP/evidence/marketdata-provider.xml"
+      - name: Changed runtime lint and distribution builds
+        run: |
+          python -m ruff check marketdata_provider/providers/offline.py marketdata_provider/timeframes/__init__.py marketdata_provider/cli/main.py tests/test_offline_strict.py tests/test_pine_timeframes.py
+          python -m compileall -q marketdata_provider
+          python -m build --no-isolation --outdir "$RUNNER_TEMP/evidence/dist" "$RUNNER_TEMP/build-source"
+          python -m pip freeze > "$RUNNER_TEMP/evidence/environment.txt"
+          test -z "$(git status --porcelain --untracked-files=no)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: data-ui-${{ matrix.python }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/evidence/
+          if-no-files-found: error
+          retention-days: 30
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: data-ui-3.13-${{ github.run_id }}
+          path: evidence
+      - name: Fast-forward RC6 and archive only this temporary branch
+        run: python evidence/restore.py publish evidence
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: data-ui-publication-${{ github.run_id }}
+          path: evidence/
+          retention-days: 30

@@ -1,0 +1,123 @@
+diff --git a/marketdata_provider/timeframes/__init__.py b/marketdata_provider/timeframes/__init__.py
+index 9be19b66bc723ed2a718940ca0c40564285bb8af..15ba8d0035e5e866911c86c4c85e8e7186e2ac68 100644
+--- a/marketdata_provider/timeframes/__init__.py
++++ b/marketdata_provider/timeframes/__init__.py
+@@ -76,6 +76,8 @@ _BYBIT = {
+ 
+ 
+ def canonical_timeframe(tf: str) -> str:
++    if type(tf) is not str or not tf.strip():
++        raise MDTimeframeUnsupported("Timeframe must be a nonempty string")
+     raw = tf.strip()
+     if raw in {"D", "1D", "1d"}:
+         return "1D"
+@@ -83,12 +85,20 @@ def canonical_timeframe(tf: str) -> str:
+         return "1W"
+     if raw in {"M", "1M"}:
+         return "1M"
+-    if raw.isdigit():
++    # Uppercase M is calendar months, never minutes. This provider currently
++    # supports one calendar month only; reject 2M instead of relabelling as 2m.
++    if raw.endswith("M"):
++        raise MDTimeframeUnsupported(f"Unsupported calendar month timeframe: {tf}")
++    if re.fullmatch(r"[0-9]+", raw):
++        if int(raw) <= 0:
++            raise MDTimeframeUnsupported("Timeframe duration must be positive")
+         return f"{int(raw)}m"
+-    m = re.fullmatch(r"(\d+)([smhd])", raw, re.IGNORECASE)
++    m = re.fullmatch(r"([0-9]+)([smhd])", raw, re.IGNORECASE)
+     if not m:
+         raise MDTimeframeUnsupported(f"Unsupported timeframe: {tf}")
+     n, unit = int(m.group(1)), m.group(2).lower()
++    if n <= 0:
++        raise MDTimeframeUnsupported("Timeframe duration must be positive")
+     if unit == "d":
+         if n == 1:
+             return "1D"
+@@ -192,3 +202,22 @@ def default_intrabar_tf(chart_tf: str) -> str:
+ 
+ def _raise_tf(tf: str) -> str:
+     raise MDTimeframeUnsupported(f"Unsupported exchange timeframe: {tf}")
++
++
++def to_pine_timeframe(tf: str) -> str:
++    """Translate provider units to Pine notation without conflating m and M.
++
++    Provider hours become Pine minutes. Calendar periods are preserved rather
++    than approximated as fixed seconds. The Pine consumer still validates its
++    language-specific multiplier limits.
++    """
++    value = canonical_timeframe(tf)
++    if value in {"1D", "1W", "1M"}:
++        return value
++    if value.endswith("h"):
++        return str(int(value[:-1]) * 60)
++    if value.endswith("m"):
++        return str(int(value[:-1]))
++    if value.endswith("s"):
++        return value[:-1] + "S"
++    raise MDTimeframeUnsupported(f"Cannot translate provider timeframe to Pine: {tf}")
+diff --git a/tests/test_pine_timeframes.py b/tests/test_pine_timeframes.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..f90c84d25d7e25f088cfd41147c3daed8f279039
+--- /dev/null
++++ b/tests/test_pine_timeframes.py
+@@ -0,0 +1,58 @@
++import pytest
++
++from marketdata_provider.errors import MDTimeframeUnsupported
++from marketdata_provider.timeframes import canonical_timeframe, to_pine_timeframe
++
++
++@pytest.mark.parametrize(
++    "source,expected",
++    [
++        ("1h", "60"),
++        ("4H", "240"),
++        ("60m", "60"),
++        ("1m", "1"),
++        ("1M", "1M"),
++        ("M", "1M"),
++        ("D", "1D"),
++        ("1d", "1D"),
++        ("1W", "1W"),
++        ("W", "1W"),
++        ("5s", "5S"),
++        ("45S", "45S"),
++        ("240", "240"),
++        ("24h", "1440"),
++    ],
++)
++def test_provider_timeframe_to_pine(source, expected):
++    assert to_pine_timeframe(source) == expected
++
++
++@pytest.mark.parametrize(
++    "bad",
++    [
++        "0",
++        "0m",
++        "0s",
++        "0h",
++        "00",
++        "00m",
++        "2M",
++        "60M",
++        "0M",
++        "-1m",
++        "1.5h",
++        None,
++        True,
++        1,
++        "",
++        "١",
++    ],
++)
++def test_invalid_or_ambiguous_timeframe_is_not_reinterpreted(bad):
++    with pytest.raises(MDTimeframeUnsupported):
++        canonical_timeframe(bad)
++
++
++def test_month_minute_remain_different():
++    assert canonical_timeframe("1M") == "1M"
++    assert canonical_timeframe("1m") == "1m"
