@@ -1,10 +1,12 @@
 """Resolve one validated bar revision chain without changing OHLCV semantics."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from typing import Any, NoReturn
 
 from openpine_contracts import RevisionState
+
 from marketdata_provider.errors import MDBarConflict, MDValidationError
 
 

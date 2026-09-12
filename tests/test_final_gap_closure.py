@@ -423,16 +423,19 @@ def test_bybit_rest_invalid_payload_and_offline_adapter() -> None:
 def test_offline_parquet_and_zstd_optional_paths(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from marketdata_provider.providers.offline import OfflineDataProvider
-    from marketdata_provider.store.raw_store import RawStore
-
     import pyarrow as pa
     import pyarrow.parquet as pq
 
+    from marketdata_provider.providers.offline import OfflineDataProvider
+    from marketdata_provider.store.raw_store import RawStore
+
     parquet_path = tmp_path / "bars.parquet"
-    pq.write_table(pa.Table.from_pylist([
-        {"time": 0, "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 1}
-    ]), parquet_path)
+    pq.write_table(
+        pa.Table.from_pylist(
+            [{"time": 0, "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 1}]
+        ),
+        parquet_path,
+    )
     assert (
         OfflineDataProvider(parquet_path).get_bars("BTCUSDT", "1m", None, None)[0].time
         == 0

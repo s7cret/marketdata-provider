@@ -24,7 +24,6 @@ from marketdata_provider.errors import MDMissingFinality, MDValidationError
 _SNAPSHOT_ID_SCHEMA = "marketdata-provider.snapshot-id.v1"
 
 
-
 @dataclass(frozen=True, slots=True)
 class ProviderRawBar:
     instrument_id: str

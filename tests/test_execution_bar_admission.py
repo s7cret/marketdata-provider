@@ -120,9 +120,47 @@ def test_conflicting_duplicate_revision_fails():
 
 
 def test_revision_resolver_rejects_empty_group():
+    import pytest
+
     from marketdata_provider.canonical.revisions import resolve_bar_revisions
     from marketdata_provider.errors import MDValidationError
-    import pytest
 
     with pytest.raises(MDValidationError, match="must not be empty"):
         resolve_bar_revisions([])
+
+
+def test_stream_rejects_non_mapping_and_unknown_finality_policy():
+    with pytest.raises(MDValidationError, match="must be an object"):
+        validate_canonical_bar([])
+    with pytest.raises(MDValidationError, match="unsupported finality policy"):
+        list(admit_canonical_bars([], finality_policy="GUESS"))
+
+
+def test_stream_emits_each_closed_interval_without_rewriting():
+    first, second = bar(), bar(1)
+    assert list(admit_canonical_bars([first, second])) == [first, second]
+
+
+def test_stream_rejects_overlapping_intervals():
+    overlapping = bar(1, open_time_utc_ms=30000, close_time_utc_ms=89999)
+    with pytest.raises(MDValidationError, match="intervals overlap"):
+        list(admit_canonical_bars([bar(), overlapping]))
+
+
+def test_revision_chain_rejects_provider_switch():
+    from marketdata_provider.canonical.revisions import resolve_bar_revisions
+
+    first = validate_canonical_bar(bar())
+    other = validate_canonical_bar(bar(provider="other"))
+    with pytest.raises(MDBarConflict, match="provider changed"):
+        resolve_bar_revisions([first, other])
+
+
+def test_admission_defends_series_identity_if_normalizer_regresses(monkeypatch):
+    from marketdata_provider.canonical import admission
+
+    wrong = bar()
+    wrong["series_id"] = "OTHER:1m"
+    monkeypatch.setattr(admission, "_normalize_snapshot_bar", lambda _: wrong)
+    with pytest.raises(MDValidationError, match="series_id"):
+        validate_canonical_bar(wrong)

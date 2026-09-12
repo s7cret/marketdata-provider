@@ -2,12 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, release/5.0.0rc6]
   pull_request:
-    branches: [main]
+    branches: [main, release/5.0.0rc6]
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -15,6 +15,7 @@ permissions:
 
 jobs:
   quality:
+    name: Quality (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -42,7 +43,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ./openpine-contracts
-          python -m pip install -e ".[dev,stream]"
+          python -m pip install -e ".[dev,stream,parquet,zstd]"
 
       - name: Run tests
         run: python -m pytest -q -m "not live_network"
