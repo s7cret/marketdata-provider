@@ -197,7 +197,15 @@ class OfflineDataProvider(DataProvider, IntrabarDataProvider):
             )
         if numbers["volume"] < 0:
             raise self._error(row_number, "volume", "must be nonnegative")
-        return Bar(opened, *(float(numbers[key]) for key in _PRICES), expected_close)
+        return Bar(
+            time=opened,
+            open=float(numbers["open"]),
+            high=float(numbers["high"]),
+            low=float(numbers["low"]),
+            close=float(numbers["close"]),
+            volume=float(numbers["volume"]),
+            time_close=expected_close,
+        )
 
     # Kept as explicit readers for callers using the old internal diagnostic API.
     # Normal get_bars never materializes an intermediate whole-file list.

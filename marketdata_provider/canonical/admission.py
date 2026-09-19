@@ -13,10 +13,10 @@ from typing import Any
 
 from openpine_contracts import Finality
 
-from marketdata_provider.canonical.revisions import resolve_bar_revisions
 from marketdata_provider.canonical.bar import (
     _normalize_snapshot_bar,
 )
+from marketdata_provider.canonical.revisions import resolve_bar_revisions
 from marketdata_provider.errors import MDValidationError
 
 _CONTEXT_FIELDS = (

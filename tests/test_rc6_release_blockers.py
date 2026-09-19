@@ -14,7 +14,6 @@ from marketdata_provider.canonical.source_identity import bind_source_identity
 from marketdata_provider.contracts import BarQuery, InstrumentKey, parse_timeframe
 from marketdata_provider.core.bar import MarketBar
 
-
 CONTRACTS_RC6_COMMIT = "904e8f660834a10d3382cd1b2ed7380c24b73072"
 PRODUCER_COMMIT = "1" * 40
 STACK_ID = "sha256:" + "2" * 64
@@ -100,7 +99,10 @@ def test_public_snapshot_preserves_per_bar_revisions_under_aggregate_identity() 
     ]
     aggregate_revision = snapshot_revision_identity(
         "binance",
-        [(item.open_time_utc_ms, item.revision, item.provider_revision) for item in raw],
+        [
+            (item.open_time_utc_ms, item.revision, item.provider_revision)
+            for item in raw
+        ],
     )
 
     snapshot = build_public_snapshot(

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import Any
 
@@ -104,9 +104,8 @@ def bind_source_identity(
     if providers and providers != {provider}:
         raise MDValidationError("source bars disagree on provider identity")
     has_explicit_revision = any(bar.provider_revision is not None for bar in bars)
-    if has_explicit_revision:
-        if any(bar.provider_revision is None for bar in bars):
-            raise MDValidationError("source bars disagree on provider_revision")
+    if has_explicit_revision and any(bar.provider_revision is None for bar in bars):
+        raise MDValidationError("source bars disagree on provider_revision")
     return [
         replace(
             item,
@@ -128,7 +127,7 @@ def bind_source_identity(
 
 
 def verify_snapshot_bar_revisions(
-    bars: list[Mapping[str, Any]],
+    bars: Sequence[Mapping[str, Any]],
     expected_provider_revision: Mapping[str, Any],
 ) -> None:
     """Fail closed when snapshot bars disagree on provider or aggregate revision."""
