@@ -96,7 +96,8 @@ def test_public_create_provider_binance_spot_solusdt_1m(tmp_path):
 
     assert snapshot["bar_count"] == 3
     assert snapshot["snapshot_envelope"]["schema_id"] == "openpine.marketdata.v2"
-    assert snapshot["query"]["instrument_id"] == "binance:spot:SOLUSDT"
+    # InstrumentKey.serialize() is specified as exchange/market/symbol.
+    assert snapshot["query"]["instrument_id"] == "binance/spot/SOLUSDT"
     assert snapshot["query"]["timeframe"] == "1m"
     assert [bar["open_time_utc_ms"] for bar in snapshot["bars"]] == list(
         range(start, end, 60_000)
