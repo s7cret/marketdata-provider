@@ -57,7 +57,11 @@ from marketdata_provider.symbols import (
     quote_asset,
     search_symbols,
 )
-from marketdata_provider.timeframes import next_open_time_ms
+from marketdata_provider.timeframes import (
+    close_time_ms,
+    next_open_time_ms,
+    to_pine_timeframe,
+)
 
 MarketDataProvider = ContractMarketDataProvider
 
@@ -99,6 +103,7 @@ __all__ = [
     "SymbolDiscoveryConfig",
     "SymbolInfo",
     "Timeframe",
+    "close_time_ms",
     "create_candle_store",
     "create_footprint_provider",
     "create_live_kline_client",
@@ -112,4 +117,5 @@ __all__ = [
     "parse_timeframe",
     "quote_asset",
     "search_symbols",
+    "to_pine_timeframe",
 ]
