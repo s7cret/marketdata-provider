@@ -11,6 +11,7 @@ EXCLUDE_PARTS = {
     ".git",
     ".nox",
     ".mypy_cache",
+    ".marketdata-cache",  # Runtime SQLite databases and transient WAL sidecars.
     ".pytest_cache",
     ".ruff_cache",
     ".tox",
