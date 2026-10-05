@@ -6,7 +6,7 @@ import csv
 import math
 import re
 from collections.abc import Iterator, Mapping
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -95,7 +95,26 @@ class OfflineDataProvider(DataProvider, IntrabarDataProvider):
                     row, field, "an ISO 8601 timestamp with timezone is required"
                 )
             try:
-                stamp = datetime.fromisoformat(value.strip())
+                text = value.strip()
+                # fromisoformat truncates fractions beyond microseconds, including
+                # timezone offsets. Validate source digits before that lossy parse.
+                # A dot/comma immediately after a calendar or week date is the
+                # date-time separator, not a fraction. Leave syntax admission to
+                # fromisoformat; inspect all time/offset digits before it truncates.
+                date_separator = re.match(
+                    r"^[0-9]{4}(?:-[0-9]{2}-[0-9]{2}|[0-9]{4}"
+                    r"|-W[0-9]{2}(?:-[0-9])?|W[0-9]{2}[0-9]?)[.,]",
+                    text,
+                )
+                fraction_source = (
+                    text[date_separator.end() :] if date_separator else text
+                )
+                if any(
+                    any(digit != "0" for digit in fraction[3:])
+                    for fraction in re.findall(r"[.,]([0-9]+)", fraction_source)
+                ):
+                    raise ValueError("exact millisecond precision is required")
+                stamp = datetime.fromisoformat(text)
                 if (
                     stamp.tzinfo is None
                     or stamp.utcoffset() is None
@@ -103,6 +122,19 @@ class OfflineDataProvider(DataProvider, IntrabarDataProvider):
                 ):
                     raise ValueError(
                         "timezone and exact millisecond precision are required"
+                    )
+                # CPython treats a zero integer offset as UTC even when its
+                # fractional second is nonzero. Restore only that lost component
+                # after syntax validation, using the already-checked source digits.
+                zero_offset = re.search(
+                    r"([+-])00(?::?00)?(?::?00)?[.,]([0-9]+)$", text
+                )
+                if zero_offset is not None:
+                    offset_ms = int(zero_offset[2][:3].ljust(3, "0"))
+                    if zero_offset[1] == "-":
+                        offset_ms = -offset_ms
+                    stamp = stamp.replace(
+                        tzinfo=timezone(timedelta(milliseconds=offset_ms))
                     )
                 delta = stamp.astimezone(UTC) - datetime(1970, 1, 1, tzinfo=UTC)
                 result = (
