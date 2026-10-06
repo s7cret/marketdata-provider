@@ -7,7 +7,11 @@ name = "marketdata-provider"
 version = "5.0.0rc6"
 description = "Market data provider for normalized exchange OHLCV and cache workflows"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13,<3.14"
+classifiers = [
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: Implementation :: CPython",
+]
 dependencies = [
   "httpx>=0.25",
   "typing-extensions>=4.0",
@@ -41,11 +45,17 @@ markers = [
 ]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.13"
 packages = ["marketdata_provider"]
 disallow_untyped_defs = false
 warn_unused_ignores = true
 ignore_missing_imports = true
+
+[tool.ruff]
+target-version = "py313"
+
+[tool.black]
+target-version = ["py313"]
 
 [tool.ruff.lint]
 # Acceptance, adapter, and storage boundaries deliberately convert broad

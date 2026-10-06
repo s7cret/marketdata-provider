@@ -126,5 +126,5 @@ def test_readme_and_changelog_identify_rc6_release() -> None:
 
     assert "# MarketData Provider 5.0.0rc6" in readme
     assert "version-5.0.0rc6-blue" in readme
-    assert "python-%3E%3D3.11-blue" in readme
+    assert "python-3.13-blue" in readme
     assert "## 5.0.0rc6" in changelog

@@ -1,8 +1,10 @@
 # MarketData Provider 5.0.0rc6
 
+The supported interpreter is ordinary CPython 3.13 (`>=3.13,<3.14`) with the GIL enabled. Free-threaded builds (`3.13t`), other Python minors, and other Python implementations are outside the supported runtime policy. This interpreter policy does not narrow functional requirements or acceptance gates.
+
 > Normalized exchange market-data contracts, cache/storage workflows, archive adapters, and streaming helpers for OpenPine.
 
-[![Version](https://img.shields.io/badge/version-5.0.0rc6-blue)](https://github.com/s7cret/marketdata-provider) [![Python](https://img.shields.io/badge/python-%3E%3D3.11-blue)](https://github.com/s7cret/marketdata-provider) [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/s7cret/marketdata-provider)
+[![Version](https://img.shields.io/badge/version-5.0.0rc6-blue)](https://github.com/s7cret/marketdata-provider) [![Python](https://img.shields.io/badge/python-3.13-blue)](https://github.com/s7cret/marketdata-provider) [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/s7cret/marketdata-provider)
 
 
 **GitHub description:** MarketData Provider normalizes OHLCV, footprint, cache, archive, and live-streaming data for OpenPine, with native Binance/Bybit adapters and explicit exchange capability metadata.
