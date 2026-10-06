@@ -28,6 +28,15 @@ _OPEN = ("time", "timestamp", "open_time")
 _CLOSE = ("time_close", "close_time")
 _PRICES = ("open", "high", "low", "close", "volume")
 _COLUMNS = frozenset((*_OPEN, *_CLOSE, *_PRICES, "symbol", "timeframe"))
+_ISO_DATE = (
+    r"[0-9]{4}(?:-[0-9]{2}-[0-9]{2}|[0-9]{4}" r"|-W[0-9]{2}(?:-[0-9])?|W[0-9]{2}[0-9]?)"
+)
+_ISO_CLOCK = (
+    r"[0-9]{2}(?:(?:[0-9]{2}){1,2}|:[0-9]{2}(?::[0-9]{2})?)?" r"(?:[.,][0-9]+)?"
+)
+_ISO_TIMESTAMP_GRAMMAR = re.compile(
+    rf"{_ISO_DATE}[\s\S]{_ISO_CLOCK}(?:Z|[+-]{_ISO_CLOCK})?"
+)
 
 
 def _timeframe_key(value: str) -> str | int:
@@ -96,11 +105,16 @@ class OfflineDataProvider(DataProvider, IntrabarDataProvider):
                 )
             try:
                 text = value.strip()
+                # CPython also accepts malformed clock suffixes as fractions.
+                # Bound every clock field and require decimal fraction separators
+                # before its lossy parser, retaining single-character date separators.
+                if _ISO_TIMESTAMP_GRAMMAR.fullmatch(text) is None:
+                    raise ValueError("invalid ISO 8601 timestamp grammar")
                 # fromisoformat truncates fractions beyond microseconds, including
                 # timezone offsets. Validate source digits before that lossy parse.
                 # A dot/comma immediately after a calendar or week date is the
-                # date-time separator, not a fraction. Leave syntax admission to
-                # fromisoformat; inspect all time/offset digits before it truncates.
+                # date-time separator, not a fraction. fromisoformat still validates
+                # calendar and clock ranges after all source digits are checked.
                 date_separator = re.match(
                     r"^[0-9]{4}(?:-[0-9]{2}-[0-9]{2}|[0-9]{4}"
                     r"|-W[0-9]{2}(?:-[0-9])?|W[0-9]{2}[0-9]?)[.,]",
