@@ -11,16 +11,13 @@ from marketdata_provider.errors import (
     MDSymbolUnsupported,
     MDUnsupportedFeature,
 )
-
-DEFAULT_STABLE_QUOTE_ASSETS: tuple[str, ...] = (
-    "USDT",
-    "USDC",
-    "FDUSD",
-    "BUSD",
-    "TUSD",
-    "USDP",
-    "DAI",
-    "USD",
+from marketdata_provider.symbols.constants import DEFAULT_STABLE_QUOTE_ASSETS
+from marketdata_provider.symbols.public_markets import (
+    _PUBLIC_SPOT_SYMBOL_ENDPOINTS,
+    _QUERY_FIRST_PUBLIC_SPOT_EXCHANGES,
+    _public_symbol_endpoint,
+    normalize_public_market_symbols,
+    normalize_public_spot_symbols,
 )
 
 
@@ -324,15 +321,6 @@ def _symbol_tuple(
     if not symbol_text or not base_text or not quote_text:
         return None
     return symbol_text, base_text, quote_text
-
-
-from marketdata_provider.symbols.public_markets import (
-    _PUBLIC_SPOT_SYMBOL_ENDPOINTS,
-    _QUERY_FIRST_PUBLIC_SPOT_EXCHANGES,
-    _public_symbol_endpoint,
-    normalize_public_market_symbols,
-    normalize_public_spot_symbols,
-)
 
 
 def _query_base_asset(query: str) -> str:

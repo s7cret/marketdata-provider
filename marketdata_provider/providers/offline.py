@@ -6,7 +6,7 @@ import csv
 import math
 import re
 from collections.abc import Iterator, Mapping
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
@@ -28,6 +28,15 @@ _OPEN = ("time", "timestamp", "open_time")
 _CLOSE = ("time_close", "close_time")
 _PRICES = ("open", "high", "low", "close", "volume")
 _COLUMNS = frozenset((*_OPEN, *_CLOSE, *_PRICES, "symbol", "timeframe"))
+_ISO_DATE = (
+    r"[0-9]{4}(?:-[0-9]{2}-[0-9]{2}|[0-9]{4}" r"|-W[0-9]{2}(?:-[0-9])?|W[0-9]{2}[0-9]?)"
+)
+_ISO_CLOCK = (
+    r"[0-9]{2}(?:(?:[0-9]{2}){1,2}|:[0-9]{2}(?::[0-9]{2})?)?" r"(?:[.,][0-9]+)?"
+)
+_ISO_TIMESTAMP_GRAMMAR = re.compile(
+    rf"{_ISO_DATE}[\s\S]{_ISO_CLOCK}(?:Z|[+-]{_ISO_CLOCK})?"
+)
 
 
 def _timeframe_key(value: str) -> str | int:
@@ -95,7 +104,31 @@ class OfflineDataProvider(DataProvider, IntrabarDataProvider):
                     row, field, "an ISO 8601 timestamp with timezone is required"
                 )
             try:
-                stamp = datetime.fromisoformat(value.strip())
+                text = value.strip()
+                # CPython also accepts malformed clock suffixes as fractions.
+                # Bound every clock field and require decimal fraction separators
+                # before its lossy parser, retaining single-character date separators.
+                if _ISO_TIMESTAMP_GRAMMAR.fullmatch(text) is None:
+                    raise ValueError("invalid ISO 8601 timestamp grammar")
+                # fromisoformat truncates fractions beyond microseconds, including
+                # timezone offsets. Validate source digits before that lossy parse.
+                # A dot/comma immediately after a calendar or week date is the
+                # date-time separator, not a fraction. fromisoformat still validates
+                # calendar and clock ranges after all source digits are checked.
+                date_separator = re.match(
+                    r"^[0-9]{4}(?:-[0-9]{2}-[0-9]{2}|[0-9]{4}"
+                    r"|-W[0-9]{2}(?:-[0-9])?|W[0-9]{2}[0-9]?)[.,]",
+                    text,
+                )
+                fraction_source = (
+                    text[date_separator.end() :] if date_separator else text
+                )
+                if any(
+                    any(digit != "0" for digit in fraction[3:])
+                    for fraction in re.findall(r"[.,]([0-9]+)", fraction_source)
+                ):
+                    raise ValueError("exact millisecond precision is required")
+                stamp = datetime.fromisoformat(text)
                 if (
                     stamp.tzinfo is None
                     or stamp.utcoffset() is None
@@ -103,6 +136,19 @@ class OfflineDataProvider(DataProvider, IntrabarDataProvider):
                 ):
                     raise ValueError(
                         "timezone and exact millisecond precision are required"
+                    )
+                # CPython treats a zero integer offset as UTC even when its
+                # fractional second is nonzero. Restore only that lost component
+                # after syntax validation, using the already-checked source digits.
+                zero_offset = re.search(
+                    r"([+-])00(?::?00)?(?::?00)?[.,]([0-9]+)$", text
+                )
+                if zero_offset is not None:
+                    offset_ms = int(zero_offset[2][:3].ljust(3, "0"))
+                    if zero_offset[1] == "-":
+                        offset_ms = -offset_ms
+                    stamp = stamp.replace(
+                        tzinfo=timezone(timedelta(milliseconds=offset_ms))
                     )
                 delta = stamp.astimezone(UTC) - datetime(1970, 1, 1, tzinfo=UTC)
                 result = (
