@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime
-from typing import Any, TypeAlias
+from typing import Any
 
 import httpx
 
@@ -64,8 +64,8 @@ _PUBLIC_MARKET_ALIASES = {
     "dated-futures": "delivery_futures",
 }
 _RATE_LIMIT_STATUSES = {418, 429}
-_QueryParam: TypeAlias = str | int | float | bool | None
-_QueryParams: TypeAlias = dict[str, _QueryParam]
+type _QueryParam = str | int | float | bool | None
+type _QueryParams = dict[str, _QueryParam]
 
 
 def public_spot_get_bars_sync(

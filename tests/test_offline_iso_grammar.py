@@ -44,7 +44,14 @@ FORM_IDS = [
 
 
 def _record(timestamp):
-    return dict(time=timestamp, open=10, high=12, low=9, close=11, volume=0)
+    return {
+        "time": timestamp,
+        "open": 10,
+        "high": 12,
+        "low": 9,
+        "close": 11,
+        "volume": 0,
+    }
 
 
 def _write_dataset(tmp_path, suffix, records):
