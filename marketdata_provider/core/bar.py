@@ -7,7 +7,7 @@ from openpine_contracts import RevisionState
 
 from marketdata_provider.errors import MDValidationError
 
-RUNTIME_CONTRACT_VERSION = "1.4"
+RUNTIME_CONTRACT_VERSION = "INT05-negative"
 
 
 @dataclass(frozen=True, slots=True)
