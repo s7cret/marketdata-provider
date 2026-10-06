@@ -3,13 +3,9 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from typing import Any
 
+from marketdata_provider import symbols
 from marketdata_provider.errors import MDUnsupportedFeature
-from marketdata_provider.symbols import (
-    DEFAULT_STABLE_QUOTE_ASSETS,
-    SymbolInfo,
-    _symbol_tuple,
-    filter_symbol_infos,
-)
+from marketdata_provider.symbols.constants import DEFAULT_STABLE_QUOTE_ASSETS
 
 _PUBLIC_SPOT_SYMBOL_ENDPOINTS: dict[str, tuple[str, dict[str, object]]] = {
     "okx": ("https://www.okx.com/api/v5/public/instruments", {"instType": "SPOT"}),
@@ -98,7 +94,7 @@ def normalize_public_spot_symbols(
     stable_quotes_only: bool = True,
     stable_quote_assets: Sequence[str] = DEFAULT_STABLE_QUOTE_ASSETS,
     limit: int | None = None,
-) -> list[SymbolInfo]:
+) -> list[symbols.SymbolInfo]:
     ex = exchange.lower()
     rows: Iterable[Any]
     if ex == "okx":
@@ -113,7 +109,7 @@ def normalize_public_spot_symbols(
     else:
         rows = payload if isinstance(payload, list) else []
 
-    items: list[SymbolInfo] = []
+    items: list[symbols.SymbolInfo] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
@@ -121,8 +117,8 @@ def normalize_public_spot_symbols(
         if parsed is None:
             continue
         symbol, base, quote = parsed
-        items.append(SymbolInfo(ex, "spot", symbol, base, quote, active=True))
-    return filter_symbol_infos(
+        items.append(symbols.SymbolInfo(ex, "spot", symbol, base, quote, active=True))
+    return symbols.filter_symbol_infos(
         items,
         query=query,
         stable_quotes_only=stable_quotes_only,
@@ -140,7 +136,7 @@ def normalize_public_market_symbols(
     stable_quotes_only: bool = True,
     stable_quote_assets: Sequence[str] = DEFAULT_STABLE_QUOTE_ASSETS,
     limit: int | None = None,
-) -> list[SymbolInfo]:
+) -> list[symbols.SymbolInfo]:
     ex = exchange.lower()
     provider_market = market.lower()
     if provider_market in {"spot", "margin"}:
@@ -155,7 +151,7 @@ def normalize_public_market_symbols(
         if provider_market == "spot":
             return spot_items
         return [
-            SymbolInfo(
+            symbols.SymbolInfo(
                 item.exchange,
                 "margin",
                 item.symbol,
@@ -168,7 +164,7 @@ def normalize_public_market_symbols(
         ]
 
     rows = _public_market_rows(ex, payload)
-    items: list[SymbolInfo] = []
+    items: list[symbols.SymbolInfo] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
@@ -177,7 +173,7 @@ def normalize_public_market_symbols(
             continue
         symbol, base, quote, contract_type = parsed
         items.append(
-            SymbolInfo(
+            symbols.SymbolInfo(
                 ex,
                 provider_market,
                 symbol,
@@ -187,7 +183,7 @@ def normalize_public_market_symbols(
                 contract_type=contract_type,
             )
         )
-    return filter_symbol_infos(
+    return symbols.filter_symbol_infos(
         items,
         query=query,
         stable_quotes_only=stable_quotes_only,
@@ -217,7 +213,7 @@ def _parse_public_market_symbol_row(
         ct_type = str(row.get("ctType") or "").lower()
         if market in {"linear", "inverse"} and ct_type and ct_type != market:
             return None
-        parsed = _symbol_tuple(
+        parsed = symbols._symbol_tuple(
             row.get("instId"),
             row.get("baseCcy"),
             row.get("quoteCcy") or row.get("settleCcy"),
@@ -247,7 +243,7 @@ def _parse_public_market_symbol_row(
             contract_market = "delivery_futures"
         if market != contract_market:
             return None
-        parsed = _symbol_tuple(symbol, row.get("base"), row.get("quote"))
+        parsed = symbols._symbol_tuple(symbol, row.get("base"), row.get("quote"))
         return (*parsed, contract_market) if parsed else None
     if exchange == "kucoin":
         if _is_disabled_status(row.get("status")):
@@ -261,14 +257,14 @@ def _parse_public_market_symbol_row(
         )
         if market != contract_market:
             return None
-        parsed = _symbol_tuple(
+        parsed = symbols._symbol_tuple(
             row.get("symbol"), row.get("baseCurrency"), row.get("quoteCurrency")
         )
         return (*parsed, contract_market) if parsed else None
     if exchange == "bitget":
         if _is_disabled_status(row.get("status")):
             return None
-        parsed = _symbol_tuple(
+        parsed = symbols._symbol_tuple(
             row.get("symbol"), row.get("baseCoin"), row.get("quoteCoin")
         )
         return (*parsed, market) if parsed else None
@@ -278,7 +274,7 @@ def _parse_public_market_symbol_row(
         ):
             return None
         symbol = str(row.get("name") or row.get("id") or "").upper()
-        parsed = _symbol_tuple(
+        parsed = symbols._symbol_tuple(
             symbol, row.get("base"), row.get("quote")
         ) or _symbol_tuple_from_delimited(symbol)
         return (*parsed, market) if parsed else None
@@ -286,7 +282,7 @@ def _parse_public_market_symbol_row(
         if _is_disabled_status(row.get("contract_status")):
             return None
         symbol = str(row.get("contract_code") or "").upper()
-        parsed = _symbol_tuple(
+        parsed = symbols._symbol_tuple(
             symbol, row.get("symbol"), row.get("trade_partition")
         ) or _symbol_tuple_from_delimited(symbol)
         return (*parsed, market) if parsed else None
@@ -300,7 +296,7 @@ def _parse_public_market_symbol_row(
         contract_market = "linear" if settle in {"USDT", "USDC"} else "inverse"
         if market != contract_market:
             return None
-        parsed = _symbol_tuple(
+        parsed = symbols._symbol_tuple(
             row.get("symbol"), row.get("baseCoin"), row.get("quoteCoin")
         ) or _symbol_tuple_from_delimited(str(row.get("symbol") or ""))
         return (*parsed, contract_market) if parsed else None
@@ -322,13 +318,15 @@ def _parse_public_spot_symbol_row(
     if exchange == "okx":
         if str(row.get("state") or "").lower() not in {"live", ""}:
             return None
-        return _symbol_tuple(row.get("instId"), row.get("baseCcy"), row.get("quoteCcy"))
+        return symbols._symbol_tuple(
+            row.get("instId"), row.get("baseCcy"), row.get("quoteCcy")
+        )
     if exchange == "coinbase":
         if row.get("trading_disabled") is True or _is_disabled_status(
             row.get("status")
         ):
             return None
-        return _symbol_tuple(
+        return symbols._symbol_tuple(
             row.get("id"), row.get("base_currency"), row.get("quote_currency")
         )
     if exchange == "kraken":
@@ -340,31 +338,31 @@ def _parse_public_spot_symbol_row(
         quote = row.get("quote")
         if "/" in wsname:
             base, quote = wsname.split("/", 1)
-        return _symbol_tuple(symbol, base, quote)
+        return symbols._symbol_tuple(symbol, base, quote)
     if exchange == "kucoin":
         if row.get("enableTrading") is False or _is_disabled_status(row.get("status")):
             return None
-        return _symbol_tuple(
+        return symbols._symbol_tuple(
             row.get("symbol"), row.get("baseCurrency"), row.get("quoteCurrency")
         )
     if exchange == "bitget":
         if _is_disabled_status(row.get("status")):
             return None
-        return _symbol_tuple(
+        return symbols._symbol_tuple(
             row.get("symbol"), row.get("baseCoin"), row.get("quoteCoin")
         )
     if exchange == "gateio":
         if str(row.get("trade_status") or "").lower() not in {"tradable", ""}:
             return None
-        return _symbol_tuple(row.get("id"), row.get("base"), row.get("quote"))
+        return symbols._symbol_tuple(row.get("id"), row.get("base"), row.get("quote"))
     if exchange == "htx":
         if str(row.get("state") or "").lower() not in {"online", ""}:
             return None
-        return _symbol_tuple(row.get("sc"), row.get("bcdn"), row.get("qcdn"))
+        return symbols._symbol_tuple(row.get("sc"), row.get("bcdn"), row.get("qcdn"))
     if exchange == "mexc":
         if _is_disabled_status(row.get("status")):
             return None
-        return _symbol_tuple(
+        return symbols._symbol_tuple(
             row.get("symbol"), row.get("baseAsset"), row.get("quoteAsset")
         )
     return None

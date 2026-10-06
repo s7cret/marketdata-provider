@@ -6,6 +6,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from marketdata_provider.distribution import distribution_manifest
+from marketdata_provider.quality import architecture_report, duplicate_report
+
 tomllib: Any
 try:
     import tomllib as _stdlib_tomllib
@@ -15,9 +18,6 @@ except ModuleNotFoundError:  # pragma: no cover - exercised on Python 3.10
     tomllib = _fallback_tomllib
 else:
     tomllib = _stdlib_tomllib
-
-from marketdata_provider.distribution import distribution_manifest
-from marketdata_provider.quality import architecture_report, duplicate_report
 
 EXPECTED_VERSION = "5.0.0rc6"
 

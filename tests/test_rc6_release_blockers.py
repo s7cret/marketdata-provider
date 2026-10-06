@@ -14,7 +14,7 @@ from marketdata_provider.canonical.source_identity import bind_source_identity
 from marketdata_provider.contracts import BarQuery, InstrumentKey, parse_timeframe
 from marketdata_provider.core.bar import MarketBar
 
-CONTRACTS_RC6_COMMIT = "904e8f660834a10d3382cd1b2ed7380c24b73072"
+CONTRACTS_RC6_COMMIT = "db1745756516b47466756c9c5d38fbbb95595a3b"
 PRODUCER_COMMIT = "1" * 40
 STACK_ID = "sha256:" + "2" * 64
 
