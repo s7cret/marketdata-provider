@@ -1,0 +1,13 @@
+name: CI preparation
+
+'on':
+  pull_request:
+    branches: ['preparation/rc6-cpython313-20261006']
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    if: ${{ github.event.repository.private == false }}
+    uses: ./.github/workflows/ci.yml
