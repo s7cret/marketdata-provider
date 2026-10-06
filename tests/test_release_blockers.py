@@ -80,7 +80,8 @@ def test_release_import_falls_back_to_tomli_without_stdlib_tomllib() -> None:
     assert result.returncode == 0, result.stderr
 
 
-def test_python_requires_supported_313_minor() -> None:
+def test_python_requires_311_floor() -> None:
+    """Keep the frozen inventory identity while enforcing the current 3.13 policy."""
     project_config = Path("pyproject.toml").read_text(encoding="utf-8")
     project_section = project_config.split("[project]", 1)[1].split(
         "[project.urls]", 1
